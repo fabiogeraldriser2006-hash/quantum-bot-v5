@@ -320,9 +320,24 @@ def main():
                 st.markdown("---")
                 st.markdown("### ⚡ Execution Panel")
                 
+                # ===============================================
+                # BLOK EKSEKUSI 
+                # ===============================================
+                st.markdown("---")
+                st.markdown("### ⚡ Execution Panel")
+                
+                # Mengambil ukuran beli yang dihitung dari sidebar
                 buy_amount_idr = st.session_state.buy_amount_idr 
                 koin_dimiliki = st.session_state.positions.get(pilihan_koin, {}).get('amount', 0.0)
                 sedang_punya_koin = koin_dimiliki > 0
+                
+                # FITUR BARU: Peringatan Minimal Order
+                MINIMAL_ORDER = 10000.0
+                if buy_amount_idr < MINIMAL_ORDER:
+                    st.error(f"⚠️ Peringatan: Ukuran Eksekusi Anda (Rp {int(buy_amount_idr):,}) terlalu kecil. Indodax mewajibkan minimal Rp 10.000 per transaksi.")
+                
+                def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
+                    # ... (kode catat_log Anda tetap sama) ...
                 
                 def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
                     st.session_state.trade_history.append({
