@@ -13,6 +13,8 @@ from sklearn.preprocessing import StandardScaler
 import hmac
 import hashlib
 import urllib.parse
+import os
+import joblib
 
 # Matikan peringatan SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -70,40 +72,53 @@ def indodax_private_api(api_key, secret_key, method, **kwargs):
     except Exception as e: return {"success": 0, "error": str(e)}
 
 # ==========================================
-# 4. MATH ENGINE & DATA PIPELINE
+# 4. MATH ENGINE & DATA PIPELINE (LENGKAP & UPGRADED)
 # ==========================================
 def calculate_technical_indicators(df):
+    """
+    Menghitung indikator teknikal termasuk OBV untuk melacak akumulasi/distribusi.
+    """
     if df.empty: return df
     df = df.sort_values('Date').reset_index(drop=True)
+    
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     df['RSI'] = df['RSI'].fillna(50)
+    
     ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
     ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema_12 - ema_26
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+    
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     std_20 = df['Close'].rolling(window=20).std()
     df['BB_Upper'] = df['SMA_20'] + (std_20 * 2)
     df['BB_Lower'] = df['SMA_20'] - (std_20 * 2)
+    
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     df['ATR'] = np.max(ranges, axis=1).rolling(14).mean()
-    df['ATR'] = df['ATR'].bfill().fillna(0) 
+    
+    # Indikator Arus Kas Bandar
+    df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
+    
+    df = df.bfill().fillna(0) 
     return df
 
 @st.cache_data(ttl=5)
 def fetch_indodax_live():
+    """Mengambil harga detik ini (Spot) dari Indodax"""
     try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
 
 def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
+    """Membuat grafik cadangan jika diblokir oleh sistem keamanan bursa"""
     try:
         current_price = float(ticker_data['last']); high_price = float(ticker_data['high']); low_price = float(ticker_data['low'])
         dates = [datetime.now() - timedelta(minutes=i*interval_minutes) for i in range(limit, -1, -1)]
@@ -124,8 +139,8 @@ def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
 
 @st.cache_data(ttl=30)
 def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
-    # PERBAIKAN: Menambahkan kembali sistem perlindungan jika diblokir
-    interval_min = 15 # Default
+    """Mengambil data riwayat grafik secara aman"""
+    interval_min = 15
     try:
         if tf == "1D": tf_api = "1D"; multiplier = 86400; interval_min = 1440
         elif tf == "4h": tf_api = "240"; multiplier = 240 * 60; interval_min = 240
@@ -143,50 +158,79 @@ def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
             return pd.DataFrame({'Date': pd.to_datetime(data['t'], unit='s'), 'Open': data['o'], 'High': data['h'], 'Low': data['l'], 'Close': data['c'], 'Volume': data['v']})
         else: raise ValueError("JSON Error")
     except Exception:
-        # Jika gagal, kembalikan grafik buatan (sintetis) agar UI tidak kosong
         st.session_state.data_source_status = "Synthetic Engine Active"
         return generate_synthetic_klines(ticker_data, limit, interval_min)
 
 # ==========================================
-# 5. NEURAL NETWORK AI ENGINE (FEE AWARE)
+# 5. NEURAL NETWORK AI ENGINE (CONTINUOUS LEARNING & FEE AWARE)
 # ==========================================
 def ai_neural_quant_brain(df_chart, coin, current_price):
     narasi = f"**🧠 AI Execution Engine: {coin}**\n\nSpot: **Rp {current_price:,}**.\n\n"
-    if len(df_chart) < 50: return narasi + "Data belum cukup.", "HOLD"
+    if len(df_chart) < 50: return narasi + "Data belum cukup untuk analisis.", "HOLD"
     
     df = df_chart.copy()
     df['BB_Position'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
     df.fillna(0, inplace=True) 
     
+    # Target Belajar: Harga harus naik menutupi Taker Fee Indodax (0.3% Beli + 0.3% Jual = 0.6%)
     df['Target'] = (df['Close'].shift(-1) > (df['Close'] * (1 + (FEE_RATE * 2)))).astype(int)
     
     train_data = df.iloc[:-1]; latest_data = df.iloc[-1:]
-    features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume']
     
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(train_data[features])
-    X_latest_scaled = scaler.transform(latest_data[features])
+    # Fitur Analisis AI (Menambahkan OBV untuk membaca Fundamental / Sentimen Pasar)
+    features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV']
     
-    model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=500, random_state=42)
+    X_train = train_data[features]
+    y_train = train_data['Target']
+    X_latest = latest_data[features]
     
+    # Sistem Memori (Joblib)
+    model_file = f'ai_model_{coin}.pkl'
+    scaler_file = f'ai_scaler_{coin}.pkl'
+    
+    if os.path.exists(model_file) and os.path.exists(scaler_file):
+        scaler = joblib.load(scaler_file)
+        model = joblib.load(model_file)
+        narasi += "💾 *Memori AI berhasil dimuat. Melanjutkan pembelajaran berkelanjutan...*\n"
+    else:
+        scaler = StandardScaler()
+        model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1, warm_start=True, random_state=42)
+        narasi += "🌱 *Menciptakan jaringan saraf baru untuk koin ini...*\n"
+
     try:
-        model.fit(X_train_scaled, train_data['Target'])
-        probabilitas = model.predict_proba(X_latest_scaled)[0]
-        prob_turun = probabilitas[0] * 100; prob_naik = probabilitas[1] * 100
+        # Proses standarisasi data & Pembelajaran Mandiri (partial_fit)
+        if not hasattr(scaler, 'n_samples_seen_'):
+            X_train_scaled = scaler.fit_transform(X_train)
+        else:
+            X_train_scaled = scaler.transform(X_train)
+            
+        X_latest_scaled = scaler.transform(X_latest)
+        model.partial_fit(X_train_scaled, y_train, classes=np.array([0, 1]))
         
-        narasi += f"- Probabilitas Profit > Fee : **{prob_naik:.1f}%**\n- Probabilitas Terkoreksi: **{prob_turun:.1f}%**\n\n"
+        # Simpan kembali memori AI ke file
+        joblib.dump(scaler, scaler_file)
+        joblib.dump(model, model_file)
+        
+        probabilitas = model.predict_proba(X_latest_scaled)[0]
+        prob_turun = probabilitas[0] * 100
+        prob_naik = probabilitas[1] * 100
+        
+        narasi += f"- Probabilitas Profit (Net) : **{prob_naik:.1f}%**\n- Probabilitas Terkoreksi: **{prob_turun:.1f}%**\n\n"
         
         if prob_naik > 65:
-            narasi += "✅ Deep Learning mendeteksi Momentum Kenaikan Melebihi Spread & Fee bursa."
+            narasi += "✅ Jaringan Saraf Mandiri mendeteksi pola akumulasi kuat (Berdasarkan pembelajaran historis)."
             konklusi = "BUY"
         elif prob_turun > 65:
-            narasi += "❌ Deep Learning mendeteksi Momentum Bearish Kuat."
+            narasi += "❌ Jaringan Saraf Mandiri merekomendasikan pelepasan aset (Distribusi terdeteksi)."
             konklusi = "SELL"
         else:
-            narasi += "⚖️ Algoritma Netral. Potensi kenaikan tidak cukup besar untuk menutupi biaya transaksi."
+            narasi += "⚖️ Probabilitas marjinal. AI menahan diri untuk melindungi ekuitas."
             konklusi = "HOLD"
+            
         return narasi, konklusi
-    except Exception as e: return narasi + f"Error Engine: {e}", "ERROR"
+        
+    except Exception as e: 
+        return narasi + f"⚠️ Kesalahan Kognitif AI: {e}", "ERROR"
 
 # ==========================================
 # 6. MAIN DASHBOARD V6.5
