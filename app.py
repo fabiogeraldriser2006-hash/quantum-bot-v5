@@ -337,9 +337,6 @@ def main():
                     st.error(f"⚠️ Peringatan: Ukuran Eksekusi Anda (Rp {int(buy_amount_idr):,}) terlalu kecil. Indodax mewajibkan minimal Rp 10.000 per transaksi.")
                 
                 def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
-                    # ... (kode catat_log Anda tetap sama) ...
-                
-                def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
                     st.session_state.trade_history.append({
                         "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "Aksi": aksi,
