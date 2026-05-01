@@ -21,7 +21,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. KONFIGURASI HALAMAN & UI 
 # ==========================================
 st.set_page_config(
-    page_title="Quantum Hedge Fund V6.4 - Net Profit Engine",
+    page_title="Quantum Hedge Fund V6.5 - UI Fixed",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -103,25 +103,49 @@ def fetch_indodax_live():
     try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
 
+def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
+    try:
+        current_price = float(ticker_data['last']); high_price = float(ticker_data['high']); low_price = float(ticker_data['low'])
+        dates = [datetime.now() - timedelta(minutes=i*interval_minutes) for i in range(limit, -1, -1)]
+        data = []
+        sim_price = low_price + ((high_price - low_price) * 0.5) 
+        for i, date in enumerate(dates):
+            if i == len(dates) - 1:
+                close_p = current_price; open_p = sim_price
+                high_p = max(open_p, close_p) * (1 + random.uniform(0, 0.002)); low_p = min(open_p, close_p) * (1 - random.uniform(0, 0.002))
+            else:
+                volatility = (high_price - low_price) * 0.05
+                open_p = sim_price; close_p = max(low_price, min(high_price, open_p + random.uniform(-volatility, volatility)))
+                high_p = max(open_p, close_p) + random.uniform(0, volatility * 0.5); low_p = min(open_p, close_p) - random.uniform(0, volatility * 0.5)
+                sim_price = close_p
+            data.append([date, open_p, high_p, low_p, close_p, random.uniform(10, 1000)])
+        return pd.DataFrame(data, columns=['Date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    except Exception: return pd.DataFrame()
+
 @st.cache_data(ttl=30)
 def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
+    # PERBAIKAN: Menambahkan kembali sistem perlindungan jika diblokir
+    interval_min = 15 # Default
     try:
         if tf == "1D": tf_api = "1D"; multiplier = 86400; interval_min = 1440
         elif tf == "4h": tf_api = "240"; multiplier = 240 * 60; interval_min = 240
         elif tf == "1h": tf_api = "60"; multiplier = 60 * 60; interval_min = 60
         else: tf_api = "15"; multiplier = 15 * 60; interval_min = 15
+        
         end_time = int(time.time()); start_time = end_time - (limit * multiplier)
         url = f"https://indodax.com/tradingview/history_v2?symbol={symbol}&resolution={tf_api}&from={start_time}&to={end_time}"
         headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
         res = requests.get(url, headers=headers, timeout=5, verify=False)
         data = res.json()
+        
         if isinstance(data, dict) and data.get('s') == 'ok':
             st.session_state.data_source_status = "Direct API"
             return pd.DataFrame({'Date': pd.to_datetime(data['t'], unit='s'), 'Open': data['o'], 'High': data['h'], 'Low': data['l'], 'Close': data['c'], 'Volume': data['v']})
         else: raise ValueError("JSON Error")
     except Exception:
-        # Jika gagal, fallback ke return DataFrame kosong untuk keamanan
-        return pd.DataFrame()
+        # Jika gagal, kembalikan grafik buatan (sintetis) agar UI tidak kosong
+        st.session_state.data_source_status = "Synthetic Engine Active"
+        return generate_synthetic_klines(ticker_data, limit, interval_min)
 
 # ==========================================
 # 5. NEURAL NETWORK AI ENGINE (FEE AWARE)
@@ -134,8 +158,6 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
     df['BB_Position'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
     df.fillna(0, inplace=True) 
     
-    # PERBAIKAN LOGIKA: AI belajar mencari pergerakan NAIK yang melebih total Fee Bolak-Balik (0.6%)
-    # Harga tutup berikutnya harus lebih besar dari Harga Tutup Saat Ini * 1.006
     df['Target'] = (df['Close'].shift(-1) > (df['Close'] * (1 + (FEE_RATE * 2)))).astype(int)
     
     train_data = df.iloc[:-1]; latest_data = df.iloc[-1:]
@@ -145,7 +167,6 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
     X_train_scaled = scaler.fit_transform(train_data[features])
     X_latest_scaled = scaler.transform(latest_data[features])
     
-    # Model dilatih untuk mendeteksi pergerakan yang "Profit-Bersih"
     model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=500, random_state=42)
     
     try:
@@ -162,13 +183,13 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
             narasi += "❌ Deep Learning mendeteksi Momentum Bearish Kuat."
             konklusi = "SELL"
         else:
-            narasi += "⚖️ Algoritma Netral. Potensi kenaikan tidak cukup besar untuk menutupi biaya transaksi (Trading Fee)."
+            narasi += "⚖️ Algoritma Netral. Potensi kenaikan tidak cukup besar untuk menutupi biaya transaksi."
             konklusi = "HOLD"
         return narasi, konklusi
     except Exception as e: return narasi + f"Error Engine: {e}", "ERROR"
 
 # ==========================================
-# 6. MAIN DASHBOARD V6.4
+# 6. MAIN DASHBOARD V6.5
 # ==========================================
 def main():
     with st.sidebar:
@@ -219,7 +240,7 @@ def main():
     tv_koin = crypto_map[pilihan_koin]["tv"]
     data_live = fetch_indodax_live()
     
-    st.title(f"🦅 QUANTUM DESK V6.4 - Realistic Trading")
+    st.title(f"🦅 QUANTUM DESK V6.5 - Reliable UI")
     
     if data_live:
         ticker_data = data_live[ticker_koin]
@@ -232,6 +253,9 @@ def main():
             
             with c_chart:
                 st.markdown(f"### 📈 Institutional Chart - {tv_koin}")
+                if "Synthetic" in st.session_state.data_source_status:
+                    st.warning("⚠️ Indodax memblokir grafik. Menampilkan grafik cadangan (Sintetis) agar aplikasi tetap berjalan.")
+                    
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
                 fig.add_trace(go.Candlestick(x=df_chart['Date'], open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='Spot'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_chart['Date'], y=df_chart['BB_Upper'], line=dict(color='rgba(255,255,255,0.2)', dash='dash'), name='BB Up'), row=1, col=1)
@@ -265,10 +289,8 @@ def main():
                         "PnL (Net)": f"Rp {int(pnl):,}" if pnl != "0" and pnl != "-" else "-"
                     })
 
-                # Logika AUTO-PILOT
                 if st.session_state.auto_pilot:
                     st.info(f"Mengawasi pasar... (Log: {st.session_state.last_action})")
-                    
                     if konklusi_ai == "BUY" and not sedang_punya_koin:
                         if api_key and secret_key:
                             res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
@@ -281,7 +303,7 @@ def main():
                         else:
                             if buy_amount_idr <= st.session_state.cash:
                                 jumlah_koin_kotor = buy_amount_idr / harga_sekarang
-                                koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE) # Dipotong fee simulasi
+                                koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
                                 st.session_state.cash -= buy_amount_idr
                                 st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
                                 catat_log("🟢 SIM AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
@@ -291,8 +313,6 @@ def main():
                     elif konklusi_ai == "SELL" and sedang_punya_koin:
                         nilai_jual_kotor = koin_dimiliki * harga_sekarang
                         nilai_jual_bersih = nilai_jual_kotor * (1 - FEE_RATE)
-                        
-                        # Modal awal sudah termasuk fee, jadi kita membandingkan nilai jual bersih dengan nilai beli asli
                         modal_awal_idr = koin_dimiliki * st.session_state.positions[pilihan_koin]['avg_price'] / (1 - FEE_RATE)
                         pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
                         
@@ -309,7 +329,6 @@ def main():
                             st.toast("✅ Simulasi Penjualan Berhasil!", icon="🔴")
                         st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
                         
-                # Logika MANUAL
                 else:
                     col_buy, col_sell = st.columns(2)
                     with col_buy:
@@ -327,7 +346,6 @@ def main():
                                     koin_diterima_bersih = (buy_amount_idr / harga_sekarang) * (1 - FEE_RATE)
                                     st.session_state.cash -= buy_amount_idr
                                     if pilihan_koin in st.session_state.positions:
-                                        # Averaging jika sudah punya koin
                                         pos_lama = st.session_state.positions[pilihan_koin]
                                         total_koin = pos_lama['amount'] + koin_diterima_bersih
                                         avg_price = ((pos_lama['amount'] * pos_lama['avg_price']) + (koin_diterima_bersih * harga_sekarang)) / total_koin
