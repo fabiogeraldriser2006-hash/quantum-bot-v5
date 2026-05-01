@@ -177,7 +177,7 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
     
     train_data = df.iloc[:-1]; latest_data = df.iloc[-1:]
     
-    # Fitur Analisis AI (Menambahkan OBV untuk membaca Fundamental / Sentimen Pasar)
+    # Fitur Analisis AI
     features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV']
     
     X_train = train_data[features]
@@ -194,7 +194,8 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
         narasi += "💾 *Memori AI berhasil dimuat. Melanjutkan pembelajaran berkelanjutan...*\n"
     else:
         scaler = StandardScaler()
-        model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1, warm_start=True, random_state=42)
+        # PERBAIKAN: Menghapus warm_start=True agar AI tidak panik saat pasar sedang sepi/sideways
+        model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1, random_state=42)
         narasi += "🌱 *Menciptakan jaringan saraf baru untuk koin ini...*\n"
 
     try:
@@ -205,6 +206,8 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
             X_train_scaled = scaler.transform(X_train)
             
         X_latest_scaled = scaler.transform(X_latest)
+        
+        # AI belajar dari data terbaru, meskipun isinya hanya 0 semua (tetap aman dengan classes=[0,1])
         model.partial_fit(X_train_scaled, y_train, classes=np.array([0, 1]))
         
         # Simpan kembali memori AI ke file
@@ -231,7 +234,6 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
         
     except Exception as e: 
         return narasi + f"⚠️ Kesalahan Kognitif AI: {e}", "ERROR"
-
 # ==========================================
 # 6. MAIN DASHBOARD V6.5
 # ==========================================
