@@ -162,10 +162,11 @@ def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
         return generate_synthetic_klines(ticker_data, limit, interval_min)
 
 # ==========================================
-# 5. NEURAL NETWORK AI ENGINE (CONTINUOUS LEARNING & FEE AWARE)
+# 5. NEURAL NETWORK AI ENGINE (TIMEFRAME AWARE)
 # ==========================================
-def ai_neural_quant_brain(df_chart, coin, current_price):
-    narasi = f"**🧠 AI Execution Engine: {coin}**\n\nSpot: **Rp {current_price:,}**.\n\n"
+# PERBAIKAN: Menambahkan parameter 'timeframe' ke dalam fungsi
+def ai_neural_quant_brain(df_chart, coin, current_price, timeframe):
+    narasi = f"**🧠 AI Execution Engine: {coin} ({timeframe})**\n\nSpot: **Rp {current_price:,}**.\n\n"
     if len(df_chart) < 50: return narasi + "Data belum cukup untuk analisis.", "HOLD"
     
     df = df_chart.copy()
@@ -177,40 +178,34 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
     
     train_data = df.iloc[:-1]; latest_data = df.iloc[-1:]
     
-    # Fitur Analisis AI
     features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV']
     
     X_train = train_data[features]
     y_train = train_data['Target']
     X_latest = latest_data[features]
     
-    # Sistem Memori (Joblib)
-    model_file = f'ai_model_{coin}.pkl'
-    scaler_file = f'ai_scaler_{coin}.pkl'
+    # PERBAIKAN PENTING: Memisahkan memori AI berdasarkan Koin DAN Timeframe
+    model_file = f'ai_model_{coin}_{timeframe}.pkl'
+    scaler_file = f'ai_scaler_{coin}_{timeframe}.pkl'
     
     if os.path.exists(model_file) and os.path.exists(scaler_file):
         scaler = joblib.load(scaler_file)
         model = joblib.load(model_file)
-        narasi += "💾 *Memori AI berhasil dimuat. Melanjutkan pembelajaran berkelanjutan...*\n"
+        narasi += f"💾 *Memori AI ({timeframe}) berhasil dimuat. Melanjutkan pembelajaran...*\n"
     else:
         scaler = StandardScaler()
-        # PERBAIKAN: Menghapus warm_start=True agar AI tidak panik saat pasar sedang sepi/sideways
         model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1, random_state=42)
-        narasi += "🌱 *Menciptakan jaringan saraf baru untuk koin ini...*\n"
+        narasi += f"🌱 *Menciptakan jaringan saraf baru untuk {coin} di timeframe {timeframe}...*\n"
 
     try:
-        # Proses standarisasi data & Pembelajaran Mandiri (partial_fit)
         if not hasattr(scaler, 'n_samples_seen_'):
             X_train_scaled = scaler.fit_transform(X_train)
         else:
             X_train_scaled = scaler.transform(X_train)
             
         X_latest_scaled = scaler.transform(X_latest)
-        
-        # AI belajar dari data terbaru, meskipun isinya hanya 0 semua (tetap aman dengan classes=[0,1])
         model.partial_fit(X_train_scaled, y_train, classes=np.array([0, 1]))
         
-        # Simpan kembali memori AI ke file
         joblib.dump(scaler, scaler_file)
         joblib.dump(model, model_file)
         
@@ -221,10 +216,10 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
         narasi += f"- Probabilitas Profit (Net) : **{prob_naik:.1f}%**\n- Probabilitas Terkoreksi: **{prob_turun:.1f}%**\n\n"
         
         if prob_naik > 65:
-            narasi += "✅ Jaringan Saraf Mandiri mendeteksi pola akumulasi kuat (Berdasarkan pembelajaran historis)."
+            narasi += "✅ Jaringan Saraf Mandiri mendeteksi pola akumulasi kuat."
             konklusi = "BUY"
         elif prob_turun > 65:
-            narasi += "❌ Jaringan Saraf Mandiri merekomendasikan pelepasan aset (Distribusi terdeteksi)."
+            narasi += "❌ Jaringan Saraf Mandiri merekomendasikan pelepasan aset."
             konklusi = "SELL"
         else:
             narasi += "⚖️ Probabilitas marjinal. AI menahan diri untuk melindungi ekuitas."
