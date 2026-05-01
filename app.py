@@ -309,7 +309,7 @@ def main():
                 
             with c_panel:
                 st.markdown("### 🧠 AI Analysis")
-                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang)
+                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart)
                 st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
                 
                 st.markdown("---")
