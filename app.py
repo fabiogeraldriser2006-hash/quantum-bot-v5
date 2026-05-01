@@ -21,7 +21,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. KONFIGURASI HALAMAN & UI 
 # ==========================================
 st.set_page_config(
-    page_title="Quantum Hedge Fund V6 - Auto Pilot",
+    page_title="Quantum Hedge Fund V6.1 - History Enabled",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -35,7 +35,6 @@ st.markdown("""
     div[data-testid="stMetricDelta"] svg { display: none; }
     .ai-box { background-color: #1A1A1A; padding: 20px; border-left: 5px solid #BB86FC; border-radius: 5px; margin-bottom: 15px;}
     .portfolio-box { background-color: #262730; padding: 15px; border-radius: 8px; border: 1px solid #444; }
-    .live-trade-box { background-color: #4A148C; padding: 15px; border-radius: 8px; border: 1px solid #BB86FC; margin-top: 10px; }
     hr { margin-top: 1rem; margin-bottom: 1rem; border-color: #333; }
     </style>
 """, unsafe_allow_html=True)
@@ -43,31 +42,31 @@ st.markdown("""
 # ==========================================
 # 2. STATE MANAGEMENT & CREDENTIALS
 # ==========================================
+# Menyimpan Modal
 if 'capital' not in st.session_state: st.session_state.capital = 1000000000.0  
 if 'risk_perc' not in st.session_state: st.session_state.risk_perc = 1.0         
+# Menyimpan Portofolio Aktif (Koin yang sedang dipegang)
 if 'positions' not in st.session_state: st.session_state.positions = {}          
 if 'cash' not in st.session_state: st.session_state.cash = 1000000000.0     
 if 'data_source_status' not in st.session_state: st.session_state.data_source_status = "Live"
-if 'auto_pilot' not in st.session_state: st.session_state.auto_pilot = False # State Auto-Pilot
-if 'last_action' not in st.session_state: st.session_state.last_action = "NONE" # Anti-Spam Log
+if 'auto_pilot' not in st.session_state: st.session_state.auto_pilot = False 
+if 'last_action' not in st.session_state: st.session_state.last_action = "NONE" 
+# MEMORI BARU: Menyimpan Buku Log Riwayat Transaksi (Trade History)
+if 'trade_history' not in st.session_state: st.session_state.trade_history = []
 
 # ==========================================
 # 3. INDODAX LIVE TRADE ENGINE
 # ==========================================
 def indodax_private_api(api_key, secret_key, method, **kwargs):
-    if not api_key or not secret_key:
-        return {"success": 0, "error": "API Key/Secret kosong."}
+    if not api_key or not secret_key: return {"success": 0, "error": "API Key/Secret kosong."}
     url = "https://indodax.com/tapi"
     data = {'method': method, 'timestamp': int(time.time() * 1000), 'recvWindow': 5000}
     data.update(kwargs)
     query_string = urllib.parse.urlencode(data)
     signature = hmac.new(secret_key.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha512).hexdigest()
     headers = {'Key': api_key, 'Sign': signature}
-    try:
-        response = requests.post(url, headers=headers, data=data, timeout=10)
-        return response.json()
-    except Exception as e:
-        return {"success": 0, "error": str(e)}
+    try: return requests.post(url, headers=headers, data=data, timeout=10).json()
+    except Exception as e: return {"success": 0, "error": str(e)}
 
 # ==========================================
 # 4. MATH ENGINE & DATA PIPELINE
@@ -100,9 +99,7 @@ def calculate_technical_indicators(df):
 
 @st.cache_data(ttl=5)
 def fetch_indodax_live():
-    try:
-        res = requests.get("https://indodax.com/api/tickers", timeout=5, verify=False)
-        return res.json()['tickers']
+    try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
 
 def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
@@ -124,7 +121,7 @@ def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
         return pd.DataFrame(data, columns=['Date', 'Open', 'High', 'Low', 'Close', 'Volume'])
     except Exception: return pd.DataFrame()
 
-@st.cache_data(ttl=30) # Cache dipersingkat agar AI lebih sensitif real-time
+@st.cache_data(ttl=30)
 def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
     try:
         if tf == "1D": tf_api = "1D"; multiplier = 86400; interval_min = 1440
@@ -133,7 +130,7 @@ def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
         else: tf_api = "15"; multiplier = 15 * 60; interval_min = 15
         end_time = int(time.time()); start_time = end_time - (limit * multiplier)
         url = f"https://indodax.com/tradingview/history_v2?symbol={symbol}&resolution={tf_api}&from={start_time}&to={end_time}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
         res = requests.get(url, headers=headers, timeout=5, verify=False)
         data = res.json()
         if isinstance(data, dict) and data.get('s') == 'ok':
@@ -165,11 +162,11 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
         probabilitas = model.predict_proba(X_latest_scaled)[0]
         prob_turun = probabilitas[0] * 100; prob_naik = probabilitas[1] * 100
         narasi += f"- Uptrend Prob : **{prob_naik:.1f}%**\n- Downtrend Prob: **{prob_turun:.1f}%**\n\n"
-        if prob_naik > 70: # Syarat Auto-Pilot diperketat jadi 70% agar akurat
-            narasi += "✅ Deep Learning mendeteksi Momentum Bullish Kuat."
+        if prob_naik > 55: # Batas agresivitas AI disetel ke 55%
+            narasi += "✅ Deep Learning mendeteksi Momentum Bullish."
             konklusi = "BUY"
-        elif prob_turun > 70:
-            narasi += "❌ Deep Learning mendeteksi Momentum Bearish Kuat."
+        elif prob_turun > 55:
+            narasi += "❌ Deep Learning mendeteksi Momentum Bearish."
             konklusi = "SELL"
         else:
             narasi += "⚖️ Algoritma Netral. Tidak ada aksi yang diperlukan."
@@ -178,29 +175,28 @@ def ai_neural_quant_brain(df_chart, coin, current_price):
     except Exception as e: return narasi + f"Error: {e}", "ERROR"
 
 # ==========================================
-# 6. MAIN DASHBOARD V6.0 (AUTO PILOT)
+# 6. MAIN DASHBOARD V6.1 (HISTORY ENABLED)
 # ==========================================
 def main():
     with st.sidebar:
         st.markdown("### 🤖 AUTO-PILOT CONTROL")
-        # SAKELAR AUTO PILOT
         auto_pilot_toggle = st.toggle("Aktifkan Auto-Pilot", value=st.session_state.auto_pilot)
         st.session_state.auto_pilot = auto_pilot_toggle
         
-        if st.session_state.auto_pilot:
-            st.success("⚡ AUTO-PILOT ON: Mencari peluang entry setiap 30 detik.")
-        else:
-            st.warning("⏸️ AUTO-PILOT OFF: Mode Manual.")
+        if st.session_state.auto_pilot: st.success("⚡ AUTO-PILOT ON: Mencari peluang entry setiap 30 detik.")
+        else: st.warning("⏸️ AUTO-PILOT OFF: Mode Manual.")
             
         st.markdown("---")
-        st.markdown("### 🔐 LIVE API CREDENTIALS")
-        api_key = st.text_input("Indodax API Key", type="password")
-        secret_key = st.text_input("Indodax Secret Key", type="password")
-        
-        mode_trading = "🔴 LIVE TRADING" if api_key and secret_key else "🟢 SIMULATION"
-        
-        st.markdown("---")
         st.markdown("### 🏦 Risk Engine")
+        
+        # Tombol Reset juga mereset buku log (trade history)
+        if st.button("🔄 Reset Portfolio & History"):
+            st.session_state.capital = 1000000000.0
+            st.session_state.cash = 1000000000.0
+            st.session_state.positions = {}
+            st.session_state.trade_history = []
+            st.rerun()
+
         new_cap = st.number_input("Target Total AUM (IDR)", value=st.session_state.capital, step=10000000.0)
         st.session_state.capital = new_cap
         st.session_state.risk_perc = st.slider("Max Risk / Trade (%)", 0.1, 5.0, st.session_state.risk_perc, 0.1)
@@ -219,7 +215,7 @@ def main():
     tv_koin = crypto_map[pilihan_koin]["tv"]
     data_live = fetch_indodax_live()
     
-    st.title(f"🦅 QUANTUM DESK V6.0 - {mode_trading}")
+    st.title(f"🦅 QUANTUM DESK V6.1 - Trading System")
     
     if data_live:
         ticker_data = data_live[ticker_koin]
@@ -228,7 +224,6 @@ def main():
         
         if not df_chart.empty:
             df_chart = calculate_technical_indicators(df_chart)
-            
             c_chart, c_panel = st.columns([7, 3])
             
             with c_chart:
@@ -248,43 +243,59 @@ def main():
                 narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang)
                 st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
                 
-                # Visual Sinyal
-                if konklusi_ai == "BUY": st.success("Sinyal AI: STRONG BUY")
-                elif konklusi_ai == "SELL": st.error("Sinyal AI: STRONG SELL")
-                else: st.warning("Sinyal AI: HOLD / WAIT")
-                
                 # ===============================================
-                # BLOK EKSEKUSI AUTO-PILOT & MANUAL
+                # BLOK EKSEKUSI AUTO-PILOT & MANUAL DENGAN PENCATATAN LOG
                 # ===============================================
                 st.markdown("---")
                 st.markdown("### ⚡ Execution Panel")
                 
-                buy_amount_idr = float(max_loss) # Auto-size berdasar risk
+                buy_amount_idr = float(max_loss) 
                 koin_dimiliki = st.session_state.positions.get(pilihan_koin, {}).get('amount', 0.0)
                 sedang_punya_koin = koin_dimiliki > 0
                 
+                def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
+                    """Fungsi pembantu untuk menulis data ke Buku Log"""
+                    st.session_state.trade_history.append({
+                        "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Aksi": aksi,
+                        "Koin": koin,
+                        "Harga (IDR)": f"Rp {int(harga):,}",
+                        "Kuantitas": f"{jumlah:.6f}",
+                        "Total Nilai": f"Rp {int(nilai):,}",
+                        "PnL (Profit)": f"Rp {int(pnl):,}" if pnl != "0" and pnl != "-" else "-"
+                    })
+
                 # Logika AUTO-PILOT
                 if st.session_state.auto_pilot:
                     st.info(f"Mengawasi pasar... (Status Log: {st.session_state.last_action})")
                     
                     if konklusi_ai == "BUY" and not sedang_punya_koin:
-                        st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
-                        # Simulasi Beli (Bisa diisi Indodax Private API jika di Mode Live)
                         if buy_amount_idr <= st.session_state.cash:
                             jumlah_koin = buy_amount_idr / harga_sekarang
                             st.session_state.cash -= buy_amount_idr
                             st.session_state.positions[pilihan_koin] = {'amount': jumlah_koin, 'avg_price': harga_sekarang}
+                            
+                            # MENCATAT LOG BELI AUTO
+                            catat_log("🟢 AUTO BUY", pilihan_koin, harga_sekarang, jumlah_koin, buy_amount_idr, "-")
+                            
+                            st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
                             st.toast("✅ AUTO-PILOT: Berhasil Membeli Koin!", icon="🟢")
                             
                     elif konklusi_ai == "SELL" and sedang_punya_koin:
-                        st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
-                        # Simulasi Jual
                         nilai_jual = koin_dimiliki * harga_sekarang
+                        modal_awal = koin_dimiliki * st.session_state.positions[pilihan_koin]['avg_price']
+                        pnl_bersih = nilai_jual - modal_awal # Hitung keuntungan
+                        
                         st.session_state.cash += nilai_jual
+                        
+                        # MENCATAT LOG JUAL AUTO
+                        catat_log("🔴 AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual, pnl_bersih)
+                        
                         del st.session_state.positions[pilihan_koin]
+                        st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
                         st.toast("✅ AUTO-PILOT: Berhasil Menjual Koin (Ambil Untung/Potong Rugi)!", icon="🔴")
                         
-                # Logika Tombol MANUAL (Jika Auto-Pilot Mati)
+                # Logika MANUAL
                 else:
                     col_buy, col_sell = st.columns(2)
                     with col_buy:
@@ -299,16 +310,31 @@ def main():
                                     st.session_state.positions[pilihan_koin] = {'amount': total_koin, 'avg_price': avg_price}
                                 else:
                                     st.session_state.positions[pilihan_koin] = {'amount': jumlah_koin, 'avg_price': harga_sekarang}
+                                
+                                # MENCATAT LOG BELI MANUAL
+                                catat_log("🟢 BUY", pilihan_koin, harga_sekarang, jumlah_koin, buy_amount_idr, "-")
                                 st.rerun()
                     with col_sell:
                         if st.button("🔴 MANUAL SELL", use_container_width=True):
                             if pilihan_koin in st.session_state.positions:
-                                nilai_jual = koin_dimiliki * harga_sekarang
+                                koin_dimiliki_manual = st.session_state.positions[pilihan_koin]['amount']
+                                harga_beli_rata2 = st.session_state.positions[pilihan_koin]['avg_price']
+                                
+                                nilai_jual = koin_dimiliki_manual * harga_sekarang
+                                modal_awal = koin_dimiliki_manual * harga_beli_rata2
+                                pnl_bersih = nilai_jual - modal_awal # Hitung keuntungan
+                                
                                 st.session_state.cash += nilai_jual
+                                
+                                # MENCATAT LOG JUAL MANUAL
+                                catat_log("🔴 SELL", pilihan_koin, harga_sekarang, koin_dimiliki_manual, nilai_jual, pnl_bersih)
+                                
                                 del st.session_state.positions[pilihan_koin] 
                                 st.rerun()
-                            
-                # Portfolio Tracker
+
+                # ===============================================
+                # UI PORTOFOLIO & RIWAYAT TRANSAKSI
+                # ===============================================
                 st.markdown("---")
                 st.markdown("### 📋 Active Portfolio")
                 if st.session_state.positions:
@@ -322,12 +348,24 @@ def main():
                 else:
                     st.caption("Tidak ada open position.")
 
-    # ===============================================
-    # TRIGGER AUTO-REFRESH (PENGGERAK MESIN AUTO-PILOT)
-    # ===============================================
+        # TAMPILAN TABEL RIWAYAT TRANSAKSI (Di luar blok kolom agar lebar penuh)
+        st.markdown("---")
+        st.markdown("### 📜 Riwayat Transaksi (Trade History)")
+        if st.session_state.trade_history:
+            # Mengubah buku log (list) menjadi tabel Pandas
+            df_history = pd.DataFrame(st.session_state.trade_history)
+            
+            # Membalik urutan agar transaksi terbaru ada di paling atas tabel
+            df_history = df_history.iloc[::-1].reset_index(drop=True)
+            
+            # Menampilkan tabel di antarmuka (UI)
+            st.dataframe(df_history, use_container_width=True)
+        else:
+            st.caption("Belum ada transaksi jual/beli yang terekam.")
+
     if st.session_state.auto_pilot:
-        time.sleep(30) # Tunggu 30 detik
-        st.rerun()     # Muat ulang aplikasi otomatis
+        time.sleep(30)
+        st.rerun()
 
 if __name__ == "__main__":
     main()
