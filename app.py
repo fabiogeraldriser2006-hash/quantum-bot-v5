@@ -334,25 +334,24 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
 
             with c_panel:
-                st.markdown("### 🧠 AI Analysis")
-                # Mengambil data fundamental dari internet
-                sentimen_sekarang = fetch_global_sentiment() 
-                # Menyuntikkan data ke AI
-                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
-                
-            with c_panel:
-                st.markdown("### 🧠 AI Analysis")
-                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart)
-                st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
-                
-                st.markdown("---")
-                st.markdown("### ⚡ Execution Panel")
-                
-                # ===============================================
-                # BLOK EKSEKUSI 
-                # ===============================================
-                st.markdown("---")
-                st.markdown("### ⚡ Execution Panel")
+            st.markdown("### 🧠 AI Analysis")
+            
+            # Mengambil data fundamental dari internet
+            sentimen_sekarang = fetch_global_sentiment()
+            
+            # Menyuntikkan data ke AI
+            narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
+            
+            # Menampilkan hasil narasi AI ke layar aplikasi
+            st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
+
+
+        st.markdown("---")
+        st.markdown("### ⚡ Execution Panel")
+
+        # ===============================================
+        # BLOK EKSEKUSI 
+        # ===============================================
                 
                 # Mengambil ukuran beli yang dihitung dari sidebar
                 buy_amount_idr = st.session_state.buy_amount_idr 
