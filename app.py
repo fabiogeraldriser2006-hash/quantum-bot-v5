@@ -174,40 +174,53 @@ def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
         return generate_synthetic_klines(ticker_data, limit, interval_min)
 
 # ==========================================
-# 5. NEURAL NETWORK AI ENGINE (TIMEFRAME AWARE)
+# 5. NEURAL NETWORK AI ENGINE (FUTURE VISION AWARE)
 # ==========================================
-# PERBAIKAN: Menambahkan parameter 'timeframe' ke dalam fungsi
-def ai_neural_quant_brain(df_chart, coin, current_price, timeframe):
-    narasi = f"**🧠 AI Execution Engine: {coin} ({timeframe})**\n\nSpot: **Rp {current_price:,}**.\n\n"
+def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_global):
+    narasi = f"**🧠 AI Execution Engine: {coin} ({timeframe})**\n\nSpot: **Rp {current_price:,}** | Sentimen Global: **{sentimen_global}/100**\n\n"
     if len(df_chart) < 50: return narasi + "Data belum cukup untuk analisis.", "HOLD"
     
     df = df_chart.copy()
     df['BB_Position'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
     df.fillna(0, inplace=True) 
     
-    # Target Belajar: Harga harus naik menutupi Taker Fee Indodax (0.3% Beli + 0.3% Jual = 0.6%)
-    df['Target'] = (df['Close'].shift(-1) > (df['Close'] * (1 + (FEE_RATE * 2)))).astype(int)
+    df['Sentiment'] = sentimen_global
     
-    train_data = df.iloc[:-1]; latest_data = df.iloc[-1:]
+    # =======================================================
+    # UPGRADE LOGIKA TARGET: Visi Masa Depan (Look-ahead 4 Candles)
+    # Kita mengecek apakah harga TERTINGGI dalam 4 candle ke depan
+    # sanggup naik lebih dari 0.6% (menutupi fee Indodax bolak-balik).
+    # =======================================================
+    LOOKAHEAD_WINDOW = 4
+    df['Future_Max'] = df['Close'].rolling(window=LOOKAHEAD_WINDOW).max().shift(-LOOKAHEAD_WINDOW)
     
-    features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV']
+    # Jika harga tertinggi di masa depan lebih besar dari (Harga Beli + Fee), maka itu target Sukses (1)
+    df['Target'] = (df['Future_Max'] > (df['Close'] * (1 + (FEE_RATE * 2)))).astype(int)
+    
+    # Karena kita mengintip 4 candle ke depan, 4 data paling akhir tidak punya masa depan untuk dipelajari.
+    # Kita buang data kosong (NaN) tersebut khusus untuk bahan belajar.
+    train_data = df.dropna(subset=['Future_Max'])
+    latest_data = df.iloc[-1:] # Data candle detik ini murni dipakai untuk ditebak
+    
+    features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV', 'Sentiment']
     
     X_train = train_data[features]
     y_train = train_data['Target']
     X_latest = latest_data[features]
     
-    # PERBAIKAN PENTING: Memisahkan memori AI berdasarkan Koin DAN Timeframe
-    model_file = f'ai_model_{coin}_{timeframe}.pkl'
-    scaler_file = f'ai_scaler_{coin}_{timeframe}.pkl'
+    # Mengganti nama file agar AI melupakan sifat pesimisnya yang lama
+    model_file = f'ai_model_{coin}_{timeframe}_v3.pkl' 
+    scaler_file = f'ai_scaler_{coin}_{timeframe}_v3.pkl'
     
     if os.path.exists(model_file) and os.path.exists(scaler_file):
         scaler = joblib.load(scaler_file)
         model = joblib.load(model_file)
-        narasi += f"💾 *Memori AI ({timeframe}) berhasil dimuat. Melanjutkan pembelajaran...*\n"
+        narasi += f"💾 *Memori AI V3 ({timeframe}) dimuat...*\n"
     else:
         scaler = StandardScaler()
-        model = MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1, random_state=42)
-        narasi += f"🌱 *Menciptakan jaringan saraf baru untuk {coin} di timeframe {timeframe}...*\n"
+        # Meningkatkan kompleksitas otak (hidden layer) agar lebih jago membaca tren
+        model = MLPClassifier(hidden_layer_sizes=(128, 64), activation='relu', solver='adam', max_iter=1, random_state=42)
+        narasi += f"🌱 *Menciptakan jaringan saraf Visi Masa Depan untuk {coin}...*\n"
 
     try:
         if not hasattr(scaler, 'n_samples_seen_'):
@@ -227,14 +240,14 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe):
         
         narasi += f"- Probabilitas Profit (Net) : **{prob_naik:.1f}%**\n- Probabilitas Terkoreksi: **{prob_turun:.1f}%**\n\n"
         
-        if prob_naik > 65:
-            narasi += "✅ Jaringan Saraf Mandiri mendeteksi pola akumulasi kuat."
+        if prob_naik > 60: # Ambang batas diturunkan sedikit menjadi 60 agar lebih responsif terhadap reli
+            narasi += "✅ Jaringan Saraf mendeteksi tren kenaikan valid (Mampu menembus Fee)."
             konklusi = "BUY"
-        elif prob_turun > 65:
-            narasi += "❌ Jaringan Saraf Mandiri merekomendasikan pelepasan aset."
+        elif prob_turun > 60:
+            narasi += "❌ Jaringan Saraf merekomendasikan pelepasan aset."
             konklusi = "SELL"
         else:
-            narasi += "⚖️ Probabilitas marjinal. AI menahan diri untuk melindungi ekuitas."
+            narasi += "⚖️ Pasar tidak menentu. AI menahan diri (HOLD)."
             konklusi = "HOLD"
             
         return narasi, konklusi
@@ -318,6 +331,13 @@ def main():
                 fig.add_trace(go.Scatter(x=df_chart['Date'], y=df_chart['MACD'], line=dict(color='#2196F3'), name='MACD'), row=2, col=1)
                 fig.update_layout(height=650, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="#121212", plot_bgcolor="#121212", xaxis_rangeslider_visible=False, font=dict(color="#E0E0E0"), showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
+
+            with c_panel:
+                st.markdown("### 🧠 AI Analysis")
+                # Mengambil data fundamental dari internet
+                sentimen_sekarang = fetch_global_sentiment() 
+                # Menyuntikkan data ke AI
+                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
                 
             with c_panel:
                 st.markdown("### 🧠 AI Analysis")
