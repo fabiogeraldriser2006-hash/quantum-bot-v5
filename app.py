@@ -393,9 +393,20 @@ def main():
                 st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
                     
             elif konklusi_ai == "SELL" and sedang_punya_koin:
+            harga_beli_rata2 = st.session_state.positions[pilihan_koin]['avg_price']
+            
+            # =========================================================
+            # PENGAMAN 1: Syarat Take Profit (Menutupi 0.6% Fee + Sedikit Profit)
+            batas_take_profit = harga_beli_rata2 * (1 + (FEE_RATE * 2) + 0.001) 
+            # PENGAMAN 2: Syarat Cut-Loss (Berdasarkan Slider Toleransi Risiko Anda)
+            batas_cut_loss = harga_beli_rata2 * (1 - (st.session_state.risk_perc / 100))
+            # =========================================================
+            
+            # Bot HANYA akan mengeksekusi SELL jika sudah untung bersih ATAU menyentuh cut-loss
+            if harga_sekarang >= batas_take_profit or harga_sekarang <= batas_cut_loss:
                 nilai_jual_kotor = koin_dimiliki * harga_sekarang
                 nilai_jual_bersih = nilai_jual_kotor * (1 - FEE_RATE)
-                modal_awal_idr = koin_dimiliki * st.session_state.positions[pilihan_koin]['avg_price'] / (1 - FEE_RATE)
+                modal_awal_idr = koin_dimiliki * harga_beli_rata2 / (1 - FEE_RATE)
                 pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
                 
                 if api_key and secret_key:
@@ -409,7 +420,10 @@ def main():
                     catat_log("🔴 SIM AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
                     del st.session_state.positions[pilihan_koin]
                     st.toast("✅ Simulasi Penjualan Berhasil!", icon="🔴")
-                st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
+                st.session_state.last_action = f"Mengeksekusi Penjualan Otomatis (PnL: Rp {int(pnl_bersih_akhir):,})..."
+            else:
+                # Jika belum untung atau belum cut-loss, abaikan teriakan AI dan tahan koinnya
+                st.session_state.last_action = "AI merekomendasikan SELL, namun sistem menahan (Menunggu target harga/cut-loss)."
                 
         else:
             col_buy, col_sell = st.columns(2)
