@@ -353,10 +353,10 @@ def main():
         # BLOK EKSEKUSI 
         # ===============================================
                 
-                # Mengambil ukuran beli yang dihitung dari sidebar
-                buy_amount_idr = st.session_state.buy_amount_idr 
-                koin_dimiliki = st.session_state.positions.get(pilihan_koin, {}).get('amount', 0.0)
-                sedang_punya_koin = koin_dimiliki > 0
+        # Mengambil ukuran beli yang dihitung dari sidebar
+        buy_amount_idr = st.session_state.buy_amount_idr 
+        koin_dimiliki = st.session_state.positions.get(pilihan_koin, {}).get('amount', 0.0)
+        sedang_punya_koin = koin_dimiliki > 0
                 
                 # FITUR BARU: Peringatan Minimal Order
                 MINIMAL_ORDER = 10000.0
