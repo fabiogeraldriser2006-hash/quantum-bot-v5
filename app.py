@@ -116,6 +116,18 @@ def fetch_indodax_live():
     """Mengambil harga detik ini (Spot) dari Indodax"""
     try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
+        @st.cache_data(ttl=3600) # Data diperbarui setiap 1 jam agar tidak memberatkan server
+def fetch_global_sentiment():
+    """
+    Fitur Fundamental: Mengambil Crypto Fear & Greed Index dari internet.
+    Skala 0 (Extreme Fear / Ketakutan Ekstrem) hingga 100 (Extreme Greed / Keserakahan Ekstrem).
+    """
+    try:
+        res = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5)
+        data = res.json()
+        return int(data['data'][0]['value'])
+    except Exception:
+        return 50 # Jika internet gagal, kembalikan nilai 50 (Netral)
 
 def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
     """Membuat grafik cadangan jika diblokir oleh sistem keamanan bursa"""
