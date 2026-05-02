@@ -267,6 +267,10 @@ def main():
         
         if st.session_state.auto_pilot: st.success("⚡ AUTO-PILOT ON")
         else: st.warning("⏸️ AUTO-PILOT OFF")
+
+        # Fitur Baru: Pengatur Kecepatan Pindai (Minimal 3 detik untuk mencegah blokir API)
+        scan_speed = st.slider("⚡ Kecepatan Pindai Bot (Detik)", 3, 60, 5, 1)
+        st.session_state.scan_speed = scan_speed
             
         st.markdown("---")
         st.markdown("### 🔐 LIVE API CREDENTIALS")
@@ -554,7 +558,7 @@ def main():
             st.caption("Belum ada transaksi jual/beli yang terekam.")
 
     if st.session_state.auto_pilot:
-        time.sleep(30)
+        time.sleep(st.session_state.scan_speed)
         st.rerun()
 
 if __name__ == "__main__":
