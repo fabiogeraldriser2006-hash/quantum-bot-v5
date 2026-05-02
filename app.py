@@ -333,18 +333,17 @@ def main():
                 fig.update_layout(height=650, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="#121212", plot_bgcolor="#121212", xaxis_rangeslider_visible=False, font=dict(color="#E0E0E0"), showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-           with c_panel:
-            # Perhatikan bahwa baris-baris di bawah ini menjorok ke dalam (punya spasi lebih banyak di kirinya)
-            st.markdown("### 🧠 AI Analysis")
-            
-            # Mengambil data fundamental dari internet
-            sentimen_sekarang = fetch_global_sentiment()
-            
-            # Menyuntikkan data ke AI
-            narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
-            
-            # Menampilkan hasil narasi AI ke layar aplikasi
-            st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
+                with c_panel:
+                    st.markdown("### 🧠 AI Analysis")
+    
+                    # Mengambil data fundamental dari internet
+                    sentimen_sekarang = fetch_global_sentiment()
+    
+                    # Menyuntikkan data ke AI
+                    narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
+    
+                    # Menampilkan hasil narasi AI ke layar aplikasi
+                    st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
 
 
         st.markdown("---")
