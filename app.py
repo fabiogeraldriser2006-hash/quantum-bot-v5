@@ -333,7 +333,8 @@ def main():
                 fig.update_layout(height=650, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="#121212", plot_bgcolor="#121212", xaxis_rangeslider_visible=False, font=dict(color="#E0E0E0"), showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-            with c_panel:
+           with c_panel:
+            # Perhatikan bahwa baris-baris di bawah ini menjorok ke dalam (punya spasi lebih banyak di kirinya)
             st.markdown("### 🧠 AI Analysis")
             
             # Mengambil data fundamental dari internet
