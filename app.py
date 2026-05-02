@@ -372,16 +372,71 @@ def main():
             })
 
         if st.session_state.auto_pilot:
-            st.info(f"Mengawasi pasar... (Log: {st.session_state.last_action})")
-            if konklusi_ai == "BUY" and not sedang_punya_koin:
-                if api_key and secret_key:
-                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
-                    if res.get('success') == 1:
-                        jumlah_koin_kotor = buy_amount_idr / harga_sekarang
-                        koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
-                        st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                        catat_log("🟢 LIVE AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                        st.toast("✅ Membeli di Indodax!", icon="🟢")
+            st.info(f"⚡ Pemindai Multi-Koin Aktif! Mengawasi BTC, ETH, dan SOL... (Log: {st.session_state.last_action})")
+            
+            # Loop untuk memindai seluruh koin yang ada di daftar crypto_map
+            for koin_target, data_koin in crypto_map.items():
+                ticker_target = data_koin["ticker"]
+                tv_target = data_koin["tv"]
+                
+                koin_dimiliki_ap = st.session_state.positions.get(koin_target, {}).get('amount', 0.0)
+                sedang_punya_koin_ap = koin_dimiliki_ap > 0
+                
+                # Mengambil harga dan data grafik untuk masing-masing koin
+                if data_live and ticker_target in data_live:
+                    harga_sekarang_ap = int(data_live[ticker_target]['last'])
+                    df_chart_ap = fetch_indodax_klines_safe(tv_target, interval_chart, 120, data_live[ticker_target])
+                    
+                    if not df_chart_ap.empty:
+                        df_chart_ap = calculate_technical_indicators(df_chart_ap)
+                        # Memanggil AI secara tersembunyi untuk koin ini
+                        _, konklusi_ai_ap = ai_neural_quant_brain(df_chart_ap, koin_target, harga_sekarang_ap, interval_chart, sentimen_sekarang)
+                        
+                        # LOGIKA BUY MULTI-KOIN
+                        if konklusi_ai_ap == "BUY" and not sedang_punya_koin_ap:
+                            if buy_amount_idr >= MINIMAL_ORDER:
+                                if api_key and secret_key:
+                                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_target, type='buy', price=int(harga_sekarang_ap*1.01), idr=buy_amount_idr)
+                                    if res.get('success') == 1:
+                                        koin_diterima_bersih = (buy_amount_idr / harga_sekarang_ap) * (1 - FEE_RATE)
+                                        st.session_state.positions[koin_target] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang_ap}
+                                        catat_log("🟢 LIVE AUTO BUY", koin_target, harga_sekarang_ap, koin_diterima_bersih, buy_amount_idr, "-")
+                                        st.toast(f"✅ Auto-Buy {koin_target} Berhasil!", icon="🟢")
+                                else:
+                                    if buy_amount_idr <= st.session_state.cash:
+                                        koin_diterima_bersih = (buy_amount_idr / harga_sekarang_ap) * (1 - FEE_RATE)
+                                        st.session_state.cash -= buy_amount_idr
+                                        st.session_state.positions[koin_target] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang_ap}
+                                        catat_log("🟢 SIM AUTO BUY", koin_target, harga_sekarang_ap, koin_diterima_bersih, buy_amount_idr, "-")
+                                        st.toast(f"✅ Simulasi Auto-Buy {koin_target} Berhasil!", icon="🟢")
+                                st.session_state.last_action = f"Membeli {koin_target}..."
+
+                        # LOGIKA SELL MULTI-KOIN DENGAN SABUK PENGAMAN
+                        elif konklusi_ai_ap == "SELL" and sedang_punya_koin_ap:
+                            harga_beli_rata2_ap = st.session_state.positions[koin_target]['avg_price']
+                            batas_take_profit_ap = harga_beli_rata2_ap * (1 + (FEE_RATE * 2) + 0.001) 
+                            batas_cut_loss_ap = harga_beli_rata2_ap * (1 - (st.session_state.risk_perc / 100))
+                            
+                            if harga_sekarang_ap >= batas_take_profit_ap or harga_sekarang_ap <= batas_cut_loss_ap:
+                                nilai_jual_kotor_ap = koin_dimiliki_ap * harga_sekarang_ap
+                                nilai_jual_bersih_ap = nilai_jual_kotor_ap * (1 - FEE_RATE)
+                                modal_awal_idr_ap = koin_dimiliki_ap * harga_beli_rata2_ap / (1 - FEE_RATE)
+                                pnl_bersih_akhir_ap = nilai_jual_bersih_ap - modal_awal_idr_ap
+                                
+                                if api_key and secret_key:
+                                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_target, type='sell', price=int(harga_sekarang_ap*0.99), **{ticker_target.split('_')[0]: koin_dimiliki_ap})
+                                    if res.get('success') == 1:
+                                        catat_log("🔴 LIVE AUTO SELL", koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
+                                        del st.session_state.positions[koin_target]
+                                        st.toast(f"✅ Auto-Sell {koin_target} Berhasil!", icon="🔴")
+                                else:
+                                    st.session_state.cash += nilai_jual_bersih_ap
+                                    catat_log("🔴 SIM AUTO SELL", koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
+                                    del st.session_state.positions[koin_target]
+                                    st.toast(f"✅ Simulasi Auto-Sell {koin_target} Berhasil!", icon="🔴")
+                                st.session_state.last_action = f"Menjual {koin_target} (PnL: Rp {int(pnl_bersih_akhir_ap):,})."
+                            else:
+                                st.session_state.last_action = f"Menahan {koin_target} (Menunggu Take-Profit/Cut-Loss)."
                 else:
                     if buy_amount_idr <= st.session_state.cash:
                         jumlah_koin_kotor = buy_amount_idr / harga_sekarang
