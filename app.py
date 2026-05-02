@@ -448,7 +448,7 @@ def main():
                             st.rerun()
 
         st.markdown("---")
-       st.markdown("### 📋 Portofolio & Saldo (Wallet)")
+        st.markdown("### 📋 Portofolio & Saldo (Wallet)")
         
         # 1. Menampilkan Saldo Asli Indodax jika API dimasukkan
         if api_key and secret_key:
