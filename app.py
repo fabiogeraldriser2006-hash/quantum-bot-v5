@@ -448,7 +448,42 @@ def main():
                             st.rerun()
 
         st.markdown("---")
-        st.markdown("### 📋 Active Portfolio (Net of Fees)")
+       st.markdown("### 📋 Portofolio & Saldo (Wallet)")
+        
+        # 1. Menampilkan Saldo Asli Indodax jika API dimasukkan
+        if api_key and secret_key:
+            st.markdown("#### 🏦 Saldo Asli Indodax Anda")
+            # Menarik data dompet dari server Indodax
+            info_wallet = indodax_private_api(api_key, secret_key, 'getInfo')
+            
+            if info_wallet.get('success') == 1:
+                saldo_asli = info_wallet['return']['balance']
+                idr_asli = float(saldo_asli.get('idr', 0))
+                
+                # Sinkronkan otomatis uang kas bot dengan saldo Rupiah asli Anda
+                st.session_state.cash = idr_asli 
+                
+                st.info(f"💵 **Uang Kas (IDR):** Rp {idr_asli:,.0f}")
+                
+                # Menampilkan koin yang terpantau di dompet Anda
+                koin_ditemukan = False
+                for koin_nama, data_koin in crypto_map.items():
+                    simbol = data_koin['ticker'].split('_')[0] # mengambil kata 'btc', 'eth', 'sol'
+                    jumlah = float(saldo_asli.get(simbol, 0))
+                    if jumlah > 0:
+                        st.success(f"🪙 **{koin_nama}:** {jumlah:.6f}")
+                        koin_ditemukan = True
+                
+                if not koin_ditemukan:
+                    st.caption("Belum ada koin kripto utama di dompet Indodax Anda.")
+            else:
+                st.error(f"Gagal memuat dompet: {info_wallet.get('error')}")
+        else:
+            st.markdown("#### 🏦 Saldo Simulasi (Virtual)")
+            st.info(f"💵 **Uang Kas Simulasi (IDR):** Rp {st.session_state.cash:,.0f}")
+
+        # 2. Menampilkan Posisi Terbuka yang sedang dikelola oleh Bot
+        st.markdown("#### 🤖 Posisi Terbuka (Dikelola Bot)")
         if st.session_state.positions:
             for koin, data in st.session_state.positions.items():
                 hrg_koin_ini = int(data_live[crypto_map[koin]["ticker"]]['last'])
@@ -461,7 +496,7 @@ def main():
                 warna = "#00FF00" if pnl_asli >= 0 else "#FF0000"
                 st.markdown(f"<div class='portfolio-box'><strong>{koin}</strong><br>Koin Diterima Bersih: {data['amount']:.5f} | Avg: Rp {data['avg_price']:,.0f}<br>Estimasi Jual Tunai: Rp {nilai_jual_bersih:,.0f} <span style='color:{warna};'>({pnl_persen:+.2f}%)</span></div>", unsafe_allow_html=True)
         else:
-            st.caption("Tidak ada open position.")
+            st.caption("Bot sedang tidak memegang posisi apa pun.")
 
         st.markdown("---")
         st.markdown("### 📜 Riwayat Transaksi (Trade History)")
