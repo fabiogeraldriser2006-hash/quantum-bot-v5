@@ -255,6 +255,7 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
         
     except Exception as e: 
         return narasi + f"⚠️ Kesalahan Kognitif AI: {e}", "ERROR"
+
 # ==========================================
 # 6. MAIN DASHBOARD V6.5
 # ==========================================
@@ -333,18 +334,14 @@ def main():
                 fig.update_layout(height=650, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="#121212", plot_bgcolor="#121212", xaxis_rangeslider_visible=False, font=dict(color="#E0E0E0"), showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-                with c_panel:
-                    st.markdown("### 🧠 AI Analysis")
-    
-                    # Mengambil data fundamental dari internet
-                    sentimen_sekarang = fetch_global_sentiment()
-    
-                    # Menyuntikkan data ke AI
-                    narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
-    
-                    # Menampilkan hasil narasi AI ke layar aplikasi
-                    st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
-
+            with c_panel:
+                st.markdown("### 🧠 AI Analysis")
+                # Mengambil data fundamental dari internet
+                sentimen_sekarang = fetch_global_sentiment()
+                # Menyuntikkan data ke AI
+                narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
+                # Menampilkan hasil narasi AI ke layar aplikasi
+                st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("### ⚡ Execution Panel")
@@ -363,120 +360,120 @@ def main():
         if buy_amount_idr < MINIMAL_ORDER:
             st.error(f"⚠️ Peringatan: Ukuran Eksekusi Anda (Rp {int(buy_amount_idr):,}) terlalu kecil. Indodax mewajibkan minimal Rp 10.000 per transaksi.")
                 
-                def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
-                    st.session_state.trade_history.append({
-                        "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Aksi": aksi,
-                        "Koin": koin,
-                        "Harga (IDR)": f"Rp {int(harga):,}",
-                        "Kuantitas Koin": f"{jumlah:.6f}",
-                        "Total IDR (Bersih)": f"Rp {int(nilai):,}",
-                        "PnL (Net)": f"Rp {int(pnl):,}" if pnl != "0" and pnl != "-" else "-"
-                    })
+        def catat_log(aksi, koin, harga, jumlah, nilai, pnl="0"):
+            st.session_state.trade_history.append({
+                "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Aksi": aksi,
+                "Koin": koin,
+                "Harga (IDR)": f"Rp {int(harga):,}",
+                "Kuantitas Koin": f"{jumlah:.6f}",
+                "Total IDR (Bersih)": f"Rp {int(nilai):,}",
+                "PnL (Net)": f"Rp {int(pnl):,}" if pnl != "0" and pnl != "-" else "-"
+            })
 
-                if st.session_state.auto_pilot:
-                    st.info(f"Mengawasi pasar... (Log: {st.session_state.last_action})")
-                    if konklusi_ai == "BUY" and not sedang_punya_koin:
-                        if api_key and secret_key:
-                            res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
-                            if res.get('success') == 1:
-                                jumlah_koin_kotor = buy_amount_idr / harga_sekarang
-                                koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
+        if st.session_state.auto_pilot:
+            st.info(f"Mengawasi pasar... (Log: {st.session_state.last_action})")
+            if konklusi_ai == "BUY" and not sedang_punya_koin:
+                if api_key and secret_key:
+                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
+                    if res.get('success') == 1:
+                        jumlah_koin_kotor = buy_amount_idr / harga_sekarang
+                        koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
+                        st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
+                        catat_log("🟢 LIVE AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
+                        st.toast("✅ Membeli di Indodax!", icon="🟢")
+                else:
+                    if buy_amount_idr <= st.session_state.cash:
+                        jumlah_koin_kotor = buy_amount_idr / harga_sekarang
+                        koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
+                        st.session_state.cash -= buy_amount_idr
+                        st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
+                        catat_log("🟢 SIM AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
+                        st.toast("✅ Simulasi Pembelian Berhasil!", icon="🟢")
+                st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
+                    
+            elif konklusi_ai == "SELL" and sedang_punya_koin:
+                nilai_jual_kotor = koin_dimiliki * harga_sekarang
+                nilai_jual_bersih = nilai_jual_kotor * (1 - FEE_RATE)
+                modal_awal_idr = koin_dimiliki * st.session_state.positions[pilihan_koin]['avg_price'] / (1 - FEE_RATE)
+                pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
+                
+                if api_key and secret_key:
+                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='sell', price=int(harga_sekarang*0.99), **{ticker_koin.split('_')[0]: koin_dimiliki})
+                    if res.get('success') == 1:
+                        catat_log("🔴 LIVE AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
+                        del st.session_state.positions[pilihan_koin]
+                        st.toast("✅ Menjual di Indodax!", icon="🔴")
+                else:
+                    st.session_state.cash += nilai_jual_bersih
+                    catat_log("🔴 SIM AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
+                    del st.session_state.positions[pilihan_koin]
+                    st.toast("✅ Simulasi Penjualan Berhasil!", icon="🔴")
+                st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
+                
+        else:
+            col_buy, col_sell = st.columns(2)
+            with col_buy:
+                if st.button("🟢 MANUAL BUY", use_container_width=True):
+                    if api_key and secret_key:
+                        res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
+                        if res.get('success') == 1:
+                            koin_diterima_bersih = (buy_amount_idr / harga_sekarang) * (1 - FEE_RATE)
+                            st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
+                            catat_log("🟢 LIVE BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
+                            st.rerun()
+                        else: st.error(f"Gagal Beli: {res.get('error')}")
+                    else:
+                        if buy_amount_idr <= st.session_state.cash:
+                            koin_diterima_bersih = (buy_amount_idr / harga_sekarang) * (1 - FEE_RATE)
+                            st.session_state.cash -= buy_amount_idr
+                            if pilihan_koin in st.session_state.positions:
+                                pos_lama = st.session_state.positions[pilihan_koin]
+                                total_koin = pos_lama['amount'] + koin_diterima_bersih
+                                avg_price = ((pos_lama['amount'] * pos_lama['avg_price']) + (koin_diterima_bersih * harga_sekarang)) / total_koin
+                                st.session_state.positions[pilihan_koin] = {'amount': total_koin, 'avg_price': avg_price}
+                            else:
                                 st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                                catat_log("🟢 LIVE AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                                st.toast("✅ Membeli di Indodax!", icon="🟢")
-                        else:
-                            if buy_amount_idr <= st.session_state.cash:
-                                jumlah_koin_kotor = buy_amount_idr / harga_sekarang
-                                koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
-                                st.session_state.cash -= buy_amount_idr
-                                st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                                catat_log("🟢 SIM AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                                st.toast("✅ Simulasi Pembelian Berhasil!", icon="🟢")
-                        st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
-                            
-                    elif konklusi_ai == "SELL" and sedang_punya_koin:
-                        nilai_jual_kotor = koin_dimiliki * harga_sekarang
-                        nilai_jual_bersih = nilai_jual_kotor * (1 - FEE_RATE)
-                        modal_awal_idr = koin_dimiliki * st.session_state.positions[pilihan_koin]['avg_price'] / (1 - FEE_RATE)
+                            catat_log("🟢 SIM BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
+                            st.rerun()
+            with col_sell:
+                if st.button("🔴 MANUAL SELL", use_container_width=True):
+                    if pilihan_koin in st.session_state.positions:
+                        koin_dimiliki_manual = st.session_state.positions[pilihan_koin]['amount']
+                        harga_beli_rata2 = st.session_state.positions[pilihan_koin]['avg_price']
+                        
+                        nilai_jual_bersih = (koin_dimiliki_manual * harga_sekarang) * (1 - FEE_RATE)
+                        modal_awal_idr = koin_dimiliki_manual * harga_beli_rata2 / (1 - FEE_RATE)
                         pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
                         
                         if api_key and secret_key:
-                            res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='sell', price=int(harga_sekarang*0.99), **{ticker_koin.split('_')[0]: koin_dimiliki})
+                            res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='sell', price=int(harga_sekarang*0.99), **{ticker_koin.split('_')[0]: koin_dimiliki_manual})
                             if res.get('success') == 1:
-                                catat_log("🔴 LIVE AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
-                                del st.session_state.positions[pilihan_koin]
-                                st.toast("✅ Menjual di Indodax!", icon="🔴")
+                                catat_log("🔴 LIVE SELL", pilihan_koin, harga_sekarang, koin_dimiliki_manual, nilai_jual_bersih, pnl_bersih_akhir)
+                                del st.session_state.positions[pilihan_koin] 
+                                st.rerun()
+                            else: st.error(f"Gagal Jual: {res.get('error')}")
                         else:
                             st.session_state.cash += nilai_jual_bersih
-                            catat_log("🔴 SIM AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
-                            del st.session_state.positions[pilihan_koin]
-                            st.toast("✅ Simulasi Penjualan Berhasil!", icon="🔴")
-                        st.session_state.last_action = "Mengeksekusi Penjualan Otomatis..."
-                        
-                else:
-                    col_buy, col_sell = st.columns(2)
-                    with col_buy:
-                        if st.button("🟢 MANUAL BUY", use_container_width=True):
-                            if api_key and secret_key:
-                                res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='buy', price=int(harga_sekarang*1.01), idr=buy_amount_idr)
-                                if res.get('success') == 1:
-                                    koin_diterima_bersih = (buy_amount_idr / harga_sekarang) * (1 - FEE_RATE)
-                                    st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                                    catat_log("🟢 LIVE BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                                    st.rerun()
-                                else: st.error(f"Gagal Beli: {res.get('error')}")
-                            else:
-                                if buy_amount_idr <= st.session_state.cash:
-                                    koin_diterima_bersih = (buy_amount_idr / harga_sekarang) * (1 - FEE_RATE)
-                                    st.session_state.cash -= buy_amount_idr
-                                    if pilihan_koin in st.session_state.positions:
-                                        pos_lama = st.session_state.positions[pilihan_koin]
-                                        total_koin = pos_lama['amount'] + koin_diterima_bersih
-                                        avg_price = ((pos_lama['amount'] * pos_lama['avg_price']) + (koin_diterima_bersih * harga_sekarang)) / total_koin
-                                        st.session_state.positions[pilihan_koin] = {'amount': total_koin, 'avg_price': avg_price}
-                                    else:
-                                        st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                                    catat_log("🟢 SIM BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                                    st.rerun()
-                    with col_sell:
-                        if st.button("🔴 MANUAL SELL", use_container_width=True):
-                            if pilihan_koin in st.session_state.positions:
-                                koin_dimiliki_manual = st.session_state.positions[pilihan_koin]['amount']
-                                harga_beli_rata2 = st.session_state.positions[pilihan_koin]['avg_price']
-                                
-                                nilai_jual_bersih = (koin_dimiliki_manual * harga_sekarang) * (1 - FEE_RATE)
-                                modal_awal_idr = koin_dimiliki_manual * harga_beli_rata2 / (1 - FEE_RATE)
-                                pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
-                                
-                                if api_key and secret_key:
-                                    res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='sell', price=int(harga_sekarang*0.99), **{ticker_koin.split('_')[0]: koin_dimiliki_manual})
-                                    if res.get('success') == 1:
-                                        catat_log("🔴 LIVE SELL", pilihan_koin, harga_sekarang, koin_dimiliki_manual, nilai_jual_bersih, pnl_bersih_akhir)
-                                        del st.session_state.positions[pilihan_koin] 
-                                        st.rerun()
-                                    else: st.error(f"Gagal Jual: {res.get('error')}")
-                                else:
-                                    st.session_state.cash += nilai_jual_bersih
-                                    catat_log("🔴 SIM SELL", pilihan_koin, harga_sekarang, koin_dimiliki_manual, nilai_jual_bersih, pnl_bersih_akhir)
-                                    del st.session_state.positions[pilihan_koin] 
-                                    st.rerun()
+                            catat_log("🔴 SIM SELL", pilihan_koin, harga_sekarang, koin_dimiliki_manual, nilai_jual_bersih, pnl_bersih_akhir)
+                            del st.session_state.positions[pilihan_koin] 
+                            st.rerun()
 
-                st.markdown("---")
-                st.markdown("### 📋 Active Portfolio (Net of Fees)")
-                if st.session_state.positions:
-                    for koin, data in st.session_state.positions.items():
-                        hrg_koin_ini = int(data_live[crypto_map[koin]["ticker"]]['last'])
-                        nilai_jual_bersih = (data['amount'] * hrg_koin_ini) * (1 - FEE_RATE)
-                        modal_awal_idr = (data['amount'] * data['avg_price']) / (1 - FEE_RATE)
-                        
-                        pnl_asli = nilai_jual_bersih - modal_awal_idr
-                        pnl_persen = (pnl_asli / modal_awal_idr) * 100
-                        
-                        warna = "#00FF00" if pnl_asli >= 0 else "#FF0000"
-                        st.markdown(f"<div class='portfolio-box'><strong>{koin}</strong><br>Koin Diterima Bersih: {data['amount']:.5f} | Avg: Rp {data['avg_price']:,.0f}<br>Estimasi Jual Tunai: Rp {nilai_jual_bersih:,.0f} <span style='color:{warna};'>({pnl_persen:+.2f}%)</span></div>", unsafe_allow_html=True)
-                else:
-                    st.caption("Tidak ada open position.")
+        st.markdown("---")
+        st.markdown("### 📋 Active Portfolio (Net of Fees)")
+        if st.session_state.positions:
+            for koin, data in st.session_state.positions.items():
+                hrg_koin_ini = int(data_live[crypto_map[koin]["ticker"]]['last'])
+                nilai_jual_bersih = (data['amount'] * hrg_koin_ini) * (1 - FEE_RATE)
+                modal_awal_idr = (data['amount'] * data['avg_price']) / (1 - FEE_RATE)
+                
+                pnl_asli = nilai_jual_bersih - modal_awal_idr
+                pnl_persen = (pnl_asli / modal_awal_idr) * 100
+                
+                warna = "#00FF00" if pnl_asli >= 0 else "#FF0000"
+                st.markdown(f"<div class='portfolio-box'><strong>{koin}</strong><br>Koin Diterima Bersih: {data['amount']:.5f} | Avg: Rp {data['avg_price']:,.0f}<br>Estimasi Jual Tunai: Rp {nilai_jual_bersih:,.0f} <span style='color:{warna};'>({pnl_persen:+.2f}%)</span></div>", unsafe_allow_html=True)
+        else:
+            st.caption("Tidak ada open position.")
 
         st.markdown("---")
         st.markdown("### 📜 Riwayat Transaksi (Trade History)")
