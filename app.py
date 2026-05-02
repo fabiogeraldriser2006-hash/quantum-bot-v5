@@ -56,6 +56,7 @@ if 'auto_pilot' not in st.session_state: st.session_state.auto_pilot = False
 if 'last_action' not in st.session_state: st.session_state.last_action = "NONE" 
 if 'trade_history' not in st.session_state: st.session_state.trade_history = []
 if 'buy_amount_idr' not in st.session_state: st.session_state.buy_amount_idr = 0.0
+if 'scan_speed' not in st.session_state: st.session_state.scan_speed = 5
 
 # ==========================================
 # 3. INDODAX LIVE TRADE ENGINE
@@ -72,12 +73,9 @@ def indodax_private_api(api_key, secret_key, method, **kwargs):
     except Exception as e: return {"success": 0, "error": str(e)}
 
 # ==========================================
-# 4. MATH ENGINE & DATA PIPELINE (LENGKAP & UPGRADED)
+# 4. MATH ENGINE & DATA PIPELINE
 # ==========================================
 def calculate_technical_indicators(df):
-    """
-    Menghitung indikator teknikal termasuk OBV untuk melacak akumulasi/distribusi.
-    """
     if df.empty: return df
     df = df.sort_values('Date').reset_index(drop=True)
     
@@ -105,33 +103,25 @@ def calculate_technical_indicators(df):
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     df['ATR'] = np.max(ranges, axis=1).rolling(14).mean()
     
-    # Indikator Arus Kas Bandar
     df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
-    
     df = df.bfill().fillna(0) 
     return df
 
 @st.cache_data(ttl=5)
 def fetch_indodax_live():
-    """Mengambil harga detik ini (Spot) dari Indodax"""
     try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
 
 @st.cache_data(ttl=3600)
 def fetch_global_sentiment():
-    """
-    Fitur Fundamental: Mengambil Crypto Fear & Greed Index dari internet.
-    Skala 0 (Extreme Fear) hingga 100 (Extreme Greed).
-    """
     try:
         res = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5)
         data = res.json()
         return int(data['data'][0]['value'])
     except Exception:
-        return 50 # Jika internet gagal, kembalikan nilai 50 (Netral)
+        return 50
 
 def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
-    """Membuat grafik cadangan jika diblokir oleh sistem keamanan bursa"""
     try:
         current_price = float(ticker_data['last']); high_price = float(ticker_data['high']); low_price = float(ticker_data['low'])
         dates = [datetime.now() - timedelta(minutes=i*interval_minutes) for i in range(limit, -1, -1)]
@@ -152,7 +142,6 @@ def generate_synthetic_klines(ticker_data, limit=120, interval_minutes=15):
 
 @st.cache_data(ttl=30)
 def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
-    """Mengambil data riwayat grafik secara aman"""
     interval_min = 15
     try:
         if tf == "1D": tf_api = "1D"; multiplier = 86400; interval_min = 1440
@@ -175,7 +164,7 @@ def fetch_indodax_klines_safe(symbol, tf, limit, ticker_data):
         return generate_synthetic_klines(ticker_data, limit, interval_min)
 
 # ==========================================
-# 5. NEURAL NETWORK AI ENGINE (FUTURE VISION AWARE)
+# 5. NEURAL NETWORK AI ENGINE 
 # ==========================================
 def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_global):
     narasi = f"**🧠 AI Execution Engine: {coin} ({timeframe})**\n\nSpot: **Rp {current_price:,}** | Sentimen Global: **{sentimen_global}/100**\n\n"
@@ -184,32 +173,20 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
     df = df_chart.copy()
     df['BB_Position'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
     df.fillna(0, inplace=True) 
-    
     df['Sentiment'] = sentimen_global
     
-    # =======================================================
-    # UPGRADE LOGIKA TARGET: Visi Masa Depan (Look-ahead 4 Candles)
-    # Kita mengecek apakah harga TERTINGGI dalam 4 candle ke depan
-    # sanggup naik lebih dari 0.6% (menutupi fee Indodax bolak-balik).
-    # =======================================================
     LOOKAHEAD_WINDOW = 4
     df['Future_Max'] = df['Close'].rolling(window=LOOKAHEAD_WINDOW).max().shift(-LOOKAHEAD_WINDOW)
-    
-    # Jika harga tertinggi di masa depan lebih besar dari (Harga Beli + Fee), maka itu target Sukses (1)
     df['Target'] = (df['Future_Max'] > (df['Close'] * (1 + (FEE_RATE * 2)))).astype(int)
     
-    # Karena kita mengintip 4 candle ke depan, 4 data paling akhir tidak punya masa depan untuk dipelajari.
-    # Kita buang data kosong (NaN) tersebut khusus untuk bahan belajar.
     train_data = df.dropna(subset=['Future_Max'])
-    latest_data = df.iloc[-1:] # Data candle detik ini murni dipakai untuk ditebak
+    latest_data = df.iloc[-1:] 
     
     features = ['RSI', 'MACD_Hist', 'BB_Position', 'Volume', 'OBV', 'Sentiment']
-    
     X_train = train_data[features]
     y_train = train_data['Target']
     X_latest = latest_data[features]
     
-    # Mengganti nama file agar AI melupakan sifat pesimisnya yang lama
     model_file = f'ai_model_{coin}_{timeframe}_v3.pkl' 
     scaler_file = f'ai_scaler_{coin}_{timeframe}_v3.pkl'
     
@@ -219,7 +196,6 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
         narasi += f"💾 *Memori AI V3 ({timeframe}) dimuat...*\n"
     else:
         scaler = StandardScaler()
-        # Meningkatkan kompleksitas otak (hidden layer) agar lebih jago membaca tren
         model = MLPClassifier(hidden_layer_sizes=(128, 64), activation='relu', solver='adam', max_iter=1, random_state=42)
         narasi += f"🌱 *Menciptakan jaringan saraf Visi Masa Depan untuk {coin}...*\n"
 
@@ -241,7 +217,7 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
         
         narasi += f"- Probabilitas Profit (Net) : **{prob_naik:.1f}%**\n- Probabilitas Terkoreksi: **{prob_turun:.1f}%**\n\n"
         
-        if prob_naik > 60: # Ambang batas diturunkan sedikit menjadi 60 agar lebih responsif terhadap reli
+        if prob_naik > 60:
             narasi += "✅ Jaringan Saraf mendeteksi tren kenaikan valid (Mampu menembus Fee)."
             konklusi = "BUY"
         elif prob_turun > 60:
@@ -252,7 +228,6 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
             konklusi = "HOLD"
             
         return narasi, konklusi
-        
     except Exception as e: 
         return narasi + f"⚠️ Kesalahan Kognitif AI: {e}", "ERROR"
 
@@ -267,8 +242,7 @@ def main():
         
         if st.session_state.auto_pilot: st.success("⚡ AUTO-PILOT ON")
         else: st.warning("⏸️ AUTO-PILOT OFF")
-
-        # Fitur Baru: Pengatur Kecepatan Pindai (Minimal 3 detik untuk mencegah blokir API)
+        
         scan_speed = st.slider("⚡ Kecepatan Pindai Bot (Detik)", 3, 60, 5, 1)
         st.session_state.scan_speed = scan_speed
             
@@ -305,7 +279,7 @@ def main():
             "Ethereum": {"ticker": "eth_idr", "tv": "ETHIDR"},
             "Solana": {"ticker": "sol_idr", "tv": "SOLIDR"}
         }
-        pilihan_koin = st.selectbox("Pilih Aset Kripto", list(crypto_map.keys()))
+        pilihan_koin = st.selectbox("Pilih Aset Kripto (Tampilan Manual)", list(crypto_map.keys()))
         interval_chart = st.selectbox("Timeframe", ["15m", "1h", "4h", "1D"], index=0)
 
     ticker_koin = crypto_map[pilihan_koin]["ticker"]
@@ -326,7 +300,7 @@ def main():
             with c_chart:
                 st.markdown(f"### 📈 Institutional Chart - {tv_koin}")
                 if "Synthetic" in st.session_state.data_source_status:
-                    st.warning("⚠️ Indodax memblokir grafik. Menampilkan grafik cadangan (Sintetis) agar aplikasi tetap berjalan.")
+                    st.warning("⚠️ Indodax memblokir grafik. Menampilkan grafik cadangan (Sintetis).")
                     
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
                 fig.add_trace(go.Candlestick(x=df_chart['Date'], open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='Spot'), row=1, col=1)
@@ -340,27 +314,16 @@ def main():
 
             with c_panel:
                 st.markdown("### 🧠 AI Analysis")
-                # Mengambil data fundamental dari internet
                 sentimen_sekarang = fetch_global_sentiment()
-                # Menyuntikkan data ke AI
                 narasi_ai, konklusi_ai = ai_neural_quant_brain(df_chart, pilihan_koin, harga_sekarang, interval_chart, sentimen_sekarang)
-                # Menampilkan hasil narasi AI ke layar aplikasi
                 st.markdown(f"<div class='ai-box'>{narasi_ai}</div>", unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("### ⚡ Execution Panel")
 
-        # ===============================================
-        # BLOK EKSEKUSI 
-        # ===============================================
-                
-        # Mengambil ukuran beli yang dihitung dari sidebar
         buy_amount_idr = st.session_state.buy_amount_idr 
-        koin_dimiliki = st.session_state.positions.get(pilihan_koin, {}).get('amount', 0.0)
-        sedang_punya_koin = koin_dimiliki > 0
-                
-        # FITUR BARU: Peringatan Minimal Order
         MINIMAL_ORDER = 10000.0
+        
         if buy_amount_idr < MINIMAL_ORDER:
             st.error(f"⚠️ Peringatan: Ukuran Eksekusi Anda (Rp {int(buy_amount_idr):,}) terlalu kecil. Indodax mewajibkan minimal Rp 10.000 per transaksi.")
                 
@@ -378,7 +341,6 @@ def main():
         if st.session_state.auto_pilot:
             st.info(f"⚡ Pemindai Multi-Koin Aktif! Mengawasi BTC, ETH, dan SOL... (Log: {st.session_state.last_action})")
             
-            # Loop untuk memindai seluruh koin yang ada di daftar crypto_map
             for koin_target, data_koin in crypto_map.items():
                 ticker_target = data_koin["ticker"]
                 tv_target = data_koin["tv"]
@@ -386,17 +348,14 @@ def main():
                 koin_dimiliki_ap = st.session_state.positions.get(koin_target, {}).get('amount', 0.0)
                 sedang_punya_koin_ap = koin_dimiliki_ap > 0
                 
-                # Mengambil harga dan data grafik untuk masing-masing koin
                 if data_live and ticker_target in data_live:
                     harga_sekarang_ap = int(data_live[ticker_target]['last'])
                     df_chart_ap = fetch_indodax_klines_safe(tv_target, interval_chart, 120, data_live[ticker_target])
                     
                     if not df_chart_ap.empty:
                         df_chart_ap = calculate_technical_indicators(df_chart_ap)
-                        # Memanggil AI secara tersembunyi untuk koin ini
                         _, konklusi_ai_ap = ai_neural_quant_brain(df_chart_ap, koin_target, harga_sekarang_ap, interval_chart, sentimen_sekarang)
                         
-                        # LOGIKA BUY MULTI-KOIN
                         if konklusi_ai_ap == "BUY" and not sedang_punya_koin_ap:
                             if buy_amount_idr >= MINIMAL_ORDER:
                                 if api_key and secret_key:
@@ -415,7 +374,6 @@ def main():
                                         st.toast(f"✅ Simulasi Auto-Buy {koin_target} Berhasil!", icon="🟢")
                                 st.session_state.last_action = f"Membeli {koin_target}..."
 
-                        # LOGIKA SELL MULTI-KOIN DENGAN SABUK PENGAMAN
                         elif konklusi_ai_ap == "SELL" and sedang_punya_koin_ap:
                             harga_beli_rata2_ap = st.session_state.positions[koin_target]['avg_price']
                             batas_take_profit_ap = harga_beli_rata2_ap * (1 + (FEE_RATE * 2) + 0.001) 
@@ -441,49 +399,6 @@ def main():
                                 st.session_state.last_action = f"Menjual {koin_target} (PnL: Rp {int(pnl_bersih_akhir_ap):,})."
                             else:
                                 st.session_state.last_action = f"Menahan {koin_target} (Menunggu Take-Profit/Cut-Loss)."
-                else:
-                    if buy_amount_idr <= st.session_state.cash:
-                        jumlah_koin_kotor = buy_amount_idr / harga_sekarang
-                        koin_diterima_bersih = jumlah_koin_kotor * (1 - FEE_RATE)
-                        st.session_state.cash -= buy_amount_idr
-                        st.session_state.positions[pilihan_koin] = {'amount': koin_diterima_bersih, 'avg_price': harga_sekarang}
-                        catat_log("🟢 SIM AUTO BUY", pilihan_koin, harga_sekarang, koin_diterima_bersih, buy_amount_idr, "-")
-                        st.toast("✅ Simulasi Pembelian Berhasil!", icon="🟢")
-                st.session_state.last_action = "Mengeksekusi Pembelian Otomatis..."
-                    
-            elif konklusi_ai == "SELL" and sedang_punya_koin:
-                harga_beli_rata2 = st.session_state.positions[pilihan_koin]['avg_price']
-                
-                # =========================================================
-                # PENGAMAN 1: Syarat Take Profit (Menutupi 0.6% Fee + Sedikit Profit)
-                batas_take_profit = harga_beli_rata2 * (1 + (FEE_RATE * 2) + 0.001) 
-                # PENGAMAN 2: Syarat Cut-Loss (Berdasarkan Slider Toleransi Risiko Anda)
-                batas_cut_loss = harga_beli_rata2 * (1 - (st.session_state.risk_perc / 100))
-                # =========================================================
-                
-                # Bot HANYA akan mengeksekusi SELL jika sudah untung bersih ATAU menyentuh cut-loss
-                if harga_sekarang >= batas_take_profit or harga_sekarang <= batas_cut_loss:
-                    nilai_jual_kotor = koin_dimiliki * harga_sekarang
-                    nilai_jual_bersih = nilai_jual_kotor * (1 - FEE_RATE)
-                    modal_awal_idr = koin_dimiliki * harga_beli_rata2 / (1 - FEE_RATE)
-                    pnl_bersih_akhir = nilai_jual_bersih - modal_awal_idr
-                    
-                    if api_key and secret_key:
-                        res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_koin, type='sell', price=int(harga_sekarang*0.99), **{ticker_koin.split('_')[0]: koin_dimiliki})
-                        if res.get('success') == 1:
-                            catat_log("🔴 LIVE AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
-                            del st.session_state.positions[pilihan_koin]
-                            st.toast("✅ Menjual di Indodax!", icon="🔴")
-                    else:
-                        st.session_state.cash += nilai_jual_bersih
-                        catat_log("🔴 SIM AUTO SELL", pilihan_koin, harga_sekarang, koin_dimiliki, nilai_jual_bersih, pnl_bersih_akhir)
-                        del st.session_state.positions[pilihan_koin]
-                        st.toast("✅ Simulasi Penjualan Berhasil!", icon="🔴")
-                    st.session_state.last_action = f"Mengeksekusi Penjualan Otomatis (PnL: Rp {int(pnl_bersih_akhir):,})..."
-                else:
-                    # Jika belum untung atau belum cut-loss, abaikan teriakan AI dan tahan koinnya
-                    st.session_state.last_action = "AI merekomendasikan SELL, namun sistem menahan (Menunggu target harga/cut-loss)."
-                    
         else:
             col_buy, col_sell = st.columns(2)
             with col_buy:
