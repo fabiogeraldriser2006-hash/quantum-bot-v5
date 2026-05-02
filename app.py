@@ -116,7 +116,7 @@ def fetch_indodax_live():
     """Mengambil harga detik ini (Spot) dari Indodax"""
     try: return requests.get("https://indodax.com/api/tickers", timeout=5, verify=False).json()['tickers']
     except Exception: return None
-        @st.cache_data(ttl=3600) # Data diperbarui setiap 1 jam agar tidak memberatkan server
+
 @st.cache_data(ttl=3600)
 def fetch_global_sentiment():
     """
