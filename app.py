@@ -552,10 +552,20 @@ def main():
             
             with st.spinner(f"⏳ Mengunduh {limit_lilin} data masa lalu dari Indodax..."):
                 tv_simbol = crypto_map[bt_koin]["tv"]
-                df_history_bt = fetch_indodax_klines_safe(tv_simbol, bt_tf, limit_lilin)
+                
+                # PERBAIKAN: Mengambil data acuan harga saat ini untuk disuntikkan ke mesin sintetis
+                bt_ticker = crypto_map[bt_koin]["ticker"]
+                bt_ticker_data = data_live[bt_ticker] if data_live else None
+                
+                # Menambahkan parameter bt_ticker_data agar mesin cadangan bisa menyala jika diblokir
+                df_history_bt = fetch_indodax_klines_safe(tv_simbol, bt_tf, limit_lilin, bt_ticker_data)
                 
             if df_history_bt is not None and not df_history_bt.empty:
-                st.success("✅ Data berhasil diunduh! Menjalankan simulasi AI...")
+                # PERBAIKAN: Memberitahu pengguna jika kita terpaksa menggunakan data sintetis
+                if "Synthetic" in st.session_state.data_source_status:
+                    st.warning("⚠️ Indodax menolak permintaan data riwayat yang sangat besar. Menggunakan Mesin Data Sintetis untuk simulasi Backtesting.")
+                else:
+                    st.success("✅ Data asli berhasil diunduh! Menjalankan simulasi AI...")
                 
                 df_history_bt = calculate_technical_indicators(df_history_bt)
                 
@@ -620,7 +630,7 @@ def main():
                     for catatan in log_simulasi:
                         st.text(catatan)
             else:
-                st.error("Gagal mengambil data masa lalu. Indodax mungkin sedang membatasi koneksi.")
+                st.error("Gagal mengambil data masa lalu. Indodax mungkin sedang membatasi koneksi dan mesin sintetis gagal dimuat.")
 
     if st.session_state.auto_pilot:
         time.sleep(st.session_state.scan_speed)
