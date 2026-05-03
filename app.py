@@ -15,6 +15,7 @@ import hashlib
 import urllib.parse
 import os
 import joblib
+import glob # Modul baru untuk mencari file dengan pola tertentu (seperti *.pkl)
 
 # Matikan peringatan SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -191,10 +192,16 @@ def ai_neural_quant_brain(df_chart, coin, current_price, timeframe, sentimen_glo
     model_file = f'ai_model_{coin}_{timeframe}_v3.pkl' 
     scaler_file = f'ai_scaler_{coin}_{timeframe}_v3.pkl'
     
+    # Blok Pengaman untuk memuat file Memori AI
     if os.path.exists(model_file) and os.path.exists(scaler_file):
-        scaler = joblib.load(scaler_file)
-        model = joblib.load(model_file)
-        narasi += f"💾 *Memori AI V3 ({timeframe}) dimuat...*\n"
+        try:
+            scaler = joblib.load(scaler_file)
+            model = joblib.load(model_file)
+            narasi += f"💾 *Memori AI V3 ({timeframe}) dimuat...*\n"
+        except Exception as e:
+            scaler = StandardScaler()
+            model = MLPClassifier(hidden_layer_sizes=(128, 64), activation='relu', solver='adam', max_iter=1, random_state=42)
+            narasi += f"⚠️ *File memori rusak akibat interupsi. Menciptakan ulang otak AI untuk {coin}...*\n"
     else:
         scaler = StandardScaler()
         model = MLPClassifier(hidden_layer_sizes=(128, 64), activation='relu', solver='adam', max_iter=1, random_state=42)
@@ -245,7 +252,6 @@ def main():
         else: st.warning("⏸️ AUTO-PILOT OFF")
         
         scan_speed = st.slider("⚡ Kecepatan Pindai Bot (Detik)", 3, 60, 5, 1)
-        st.session_state.scan_speed = scan_speed
         st.session_state.atr_multiplier = st.slider("🛡️ Jarak Trailing Stop (Pengali ATR)", 1.0, 5.0, 2.0, 0.1)
             
         st.markdown("---")
@@ -276,6 +282,23 @@ def main():
         st.info(f"**Dana Dieksekusi:** Rp {st.session_state.buy_amount_idr:,.0f}\n\n**Batas Toleransi Kerugian:** Rp {max_loss_allowed:,.0f}")
         
         st.markdown("---")
+        
+        # Fitur Baru: Tombol Perbaikan AI (Mengatasi Pickle Error secara otomatis)
+        st.markdown("### 🛠️ Maintenance Sistem")
+        if st.button("🗑️ Reset & Perbaiki Memori AI", use_container_width=True):
+            file_ditemukan = glob.glob("*.pkl") # Mencari semua file berakhiran .pkl di server
+            file_dihapus = 0
+            for file_pkl in file_ditemukan:
+                try:
+                    os.remove(file_pkl) # Memerintahkan server untuk menghapusnya
+                    file_dihapus += 1
+                except Exception as e:
+                    st.error(f"Gagal menghapus {file_pkl}: {e}")
+            if file_dihapus > 0:
+                st.success(f"✅ {file_dihapus} file memori AI yang rusak berhasil dibersihkan! AI akan belajar dari awal.")
+            else:
+                st.info("ℹ️ Tidak ada file memori AI yang perlu dibersihkan.")
+        
         crypto_map = {
             "Bitcoin": {"ticker": "btc_idr", "tv": "BTCIDR"},
             "Ethereum": {"ticker": "eth_idr", "tv": "ETHIDR"},
@@ -284,14 +307,8 @@ def main():
 
     st.title(f"🦅 QUANTUM DESK V7.5 - Complete Edition")
 
-    # ==========================================
-    # PEMBUATAN 2 TABS UTAMA
-    # ==========================================
     tab_live, tab_backtest = st.tabs(["🔴 Live Trading Dashboard", "⏪ Mesin Backtesting"])
 
-    # ----------------------------------------------------------------------------------------
-    # TAB 1: LIVE DASHBOARD
-    # ----------------------------------------------------------------------------------------
     with tab_live:
         pilihan_koin = st.selectbox("Pilih Aset Kripto (Tampilan Manual)", list(crypto_map.keys()), key="live_koin")
         interval_chart = st.selectbox("Timeframe", ["15m", "1h", "4h", "1D"], index=0, key="live_tf")
@@ -525,9 +542,6 @@ def main():
             else:
                 st.caption("Belum ada transaksi jual/beli yang terekam.")
 
-    # ----------------------------------------------------------------------------------------
-    # TAB 2: BACKTESTING ROOM (FITUR BARU)
-    # ----------------------------------------------------------------------------------------
     with tab_backtest:
         st.markdown("### ⏪ Mesin Waktu Backtesting (Penguji Strategi)")
         st.markdown("Simulasikan kecerdasan AI dan ketahanan Trailing Stop-Loss Anda pada data harga masa lalu. Simulasi ini menggunakan **modal awal fiktif Rp 10.000.000**.")
@@ -552,16 +566,11 @@ def main():
             
             with st.spinner(f"⏳ Mengunduh {limit_lilin} data masa lalu dari Indodax..."):
                 tv_simbol = crypto_map[bt_koin]["tv"]
-                
-                # PERBAIKAN: Mengambil data acuan harga saat ini untuk disuntikkan ke mesin sintetis
                 bt_ticker = crypto_map[bt_koin]["ticker"]
                 bt_ticker_data = data_live[bt_ticker] if data_live else None
-                
-                # Menambahkan parameter bt_ticker_data agar mesin cadangan bisa menyala jika diblokir
                 df_history_bt = fetch_indodax_klines_safe(tv_simbol, bt_tf, limit_lilin, bt_ticker_data)
                 
             if df_history_bt is not None and not df_history_bt.empty:
-                # PERBAIKAN: Memberitahu pengguna jika kita terpaksa menggunakan data sintetis
                 if "Synthetic" in st.session_state.data_source_status:
                     st.warning("⚠️ Indodax menolak permintaan data riwayat yang sangat besar. Menggunakan Mesin Data Sintetis untuk simulasi Backtesting.")
                 else:
