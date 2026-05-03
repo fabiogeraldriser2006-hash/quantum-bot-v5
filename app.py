@@ -57,6 +57,7 @@ if 'last_action' not in st.session_state: st.session_state.last_action = "NONE"
 if 'trade_history' not in st.session_state: st.session_state.trade_history = []
 if 'buy_amount_idr' not in st.session_state: st.session_state.buy_amount_idr = 0.0
 if 'scan_speed' not in st.session_state: st.session_state.scan_speed = 5
+if 'atr_multiplier' not in st.session_state: st.session_state.atr_multiplier = 2.0
 
 # ==========================================
 # 3. INDODAX LIVE TRADE ENGINE
@@ -245,6 +246,8 @@ def main():
         
         scan_speed = st.slider("⚡ Kecepatan Pindai Bot (Detik)", 3, 60, 5, 1)
         st.session_state.scan_speed = scan_speed
+        # Fitur Baru: Pengatur Sensitivitas Jaring Pengaman (ATR)
+        st.session_state.atr_multiplier = st.slider("🛡️ Jarak Trailing Stop (Pengali ATR)", 1.0, 5.0, 2.0, 0.1)
             
         st.markdown("---")
         st.markdown("### 🔐 LIVE API CREDENTIALS")
@@ -374,31 +377,45 @@ def main():
                                         st.toast(f"✅ Simulasi Auto-Buy {koin_target} Berhasil!", icon="🟢")
                                 st.session_state.last_action = f"Membeli {koin_target}..."
 
-                        elif konklusi_ai_ap == "SELL" and sedang_punya_koin_ap:
+                        # LOGIKA PERLINDUNGAN ASET (TRAILING STOP ATR & TAKE PROFIT)
+                        elif sedang_punya_koin_ap:
+                            # 1. Pembaruan Rekor Harga Tertinggi Terus-menerus
+                            harga_tercatat = st.session_state.positions[koin_target].get('highest_price', st.session_state.positions[koin_target]['avg_price'])
+                            if harga_sekarang_ap > harga_tercatat:
+                                st.session_state.positions[koin_target]['highest_price'] = harga_sekarang_ap
+                                
+                            harga_tertinggi = st.session_state.positions[koin_target].get('highest_price', harga_sekarang_ap)
                             harga_beli_rata2_ap = st.session_state.positions[koin_target]['avg_price']
-                            batas_take_profit_ap = harga_beli_rata2_ap * (1 + (FEE_RATE * 2) + 0.001) 
-                            batas_cut_loss_ap = harga_beli_rata2_ap * (1 - (st.session_state.risk_perc / 100))
+                            atr_sekarang = df_chart_ap['ATR'].iloc[-1]
                             
-                            if harga_sekarang_ap >= batas_take_profit_ap or harga_sekarang_ap <= batas_cut_loss_ap:
+                            # 2. Menghitung Titik Jaring Pengaman Dinamis
+                            batas_trailing_stop = harga_tertinggi - (atr_sekarang * st.session_state.atr_multiplier)
+                            batas_take_profit_ap = harga_beli_rata2_ap * (1 + (FEE_RATE * 2) + 0.001)
+                            
+                            # 3. Eksekusi SELL JIKA: AI memerintahkan Take Profit ATAU Harga anjlok menyentuh Jaring
+                            if (konklusi_ai_ap == "SELL" and harga_sekarang_ap >= batas_take_profit_ap) or (harga_sekarang_ap <= batas_trailing_stop):
                                 nilai_jual_kotor_ap = koin_dimiliki_ap * harga_sekarang_ap
                                 nilai_jual_bersih_ap = nilai_jual_kotor_ap * (1 - FEE_RATE)
                                 modal_awal_idr_ap = koin_dimiliki_ap * harga_beli_rata2_ap / (1 - FEE_RATE)
                                 pnl_bersih_akhir_ap = nilai_jual_bersih_ap - modal_awal_idr_ap
                                 
+                                aksi_jual = "🔴 LIVE AUTO SELL" if konklusi_ai_ap == "SELL" else "🛡️ LIVE TRAILING STOP"
+                                aksi_jual_sim = "🔴 SIM AUTO SELL" if konklusi_ai_ap == "SELL" else "🛡️ SIM TRAILING STOP"
+                                
                                 if api_key and secret_key:
                                     res = indodax_private_api(api_key, secret_key, 'trade', pair=ticker_target, type='sell', price=int(harga_sekarang_ap*0.99), **{ticker_target.split('_')[0]: koin_dimiliki_ap})
                                     if res.get('success') == 1:
-                                        catat_log("🔴 LIVE AUTO SELL", koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
+                                        catat_log(aksi_jual, koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
                                         del st.session_state.positions[koin_target]
-                                        st.toast(f"✅ Auto-Sell {koin_target} Berhasil!", icon="🔴")
+                                        st.toast(f"✅ Sell {koin_target} Dieksekusi!", icon="🔴")
                                 else:
                                     st.session_state.cash += nilai_jual_bersih_ap
-                                    catat_log("🔴 SIM AUTO SELL", koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
+                                    catat_log(aksi_jual_sim, koin_target, harga_sekarang_ap, koin_dimiliki_ap, nilai_jual_bersih_ap, pnl_bersih_akhir_ap)
                                     del st.session_state.positions[koin_target]
-                                    st.toast(f"✅ Simulasi Auto-Sell {koin_target} Berhasil!", icon="🔴")
+                                    st.toast(f"✅ Simulasi Sell {koin_target} Berhasil!", icon="🔴")
                                 st.session_state.last_action = f"Menjual {koin_target} (PnL: Rp {int(pnl_bersih_akhir_ap):,})."
                             else:
-                                st.session_state.last_action = f"Menahan {koin_target} (Menunggu Take-Profit/Cut-Loss)."
+                                st.session_state.last_action = f"Mengamankan {koin_target} (Batas Perlindungan: Rp {int(batas_trailing_stop):,})."
         else:
             col_buy, col_sell = st.columns(2)
             with col_buy:
